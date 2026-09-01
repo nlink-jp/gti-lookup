@@ -3,9 +3,9 @@
 Google Threat Intelligence (GTI) から、インジケーターにキュレート済みの
 **脅威アクター文脈**を付ける CLI 兼ローカル MCP サーバ。
 
-> **Status: 開発中・未リリース。** スキャフォールド（設定・結果キャッシュ・
-> MCP ハンドシェイク・`cache` コマンド）は動作します。lookup 系コマンド
-> （`search` / `threat` / `ioc`）は未実装です。設計は
+> **Status: 開発中・未リリース。** 中核（`search` / `threat` / `ioc`、MCP
+> サーバ、キャッシュ）は実装・オフラインテスト済みです。実 GTI API に対する
+> live 検証が未了です。設計は
 > [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md) で確定しています。
 
 姉妹の lookup 群が公開・コミュニティソースから答えるのに対し
@@ -45,22 +45,36 @@ GTI ツール群が使う `VT_APIKEY`）、`GTI_LOOKUP_BASE_URL`、
 ## コマンド
 
 ```
-gti-lookup search <query>           脅威の検索（アクター/キャンペーン/ファミリー…）
-gti-lookup threat <collection-id>   collection のキュレート済みレポート; --related でピボット
-gti-lookup ioc <value>              ハッシュ/ドメイン/IP/URL のアクター文脈
-gti-lookup cache status|clear       結果キャッシュの確認・削除
-gti-lookup mcp                      ローカル MCP サーバとして起動 (stdio)
-gti-lookup version                  バージョン表示
+gti-lookup search <query> [--type threat-actor] [--order relevance-] [--limit N]
+gti-lookup threat <collection-id> [--related <name> | --related-other <name>]
+gti-lookup ioc <value ...> [--full] [--related <name> | --related-other <name>]
+gti-lookup cache status|clear
+gti-lookup mcp
+gti-lookup version
 ```
 
-このビルドでは `search` / `threat` / `ioc` はプレースホルダで、その旨を
-表示してエラー終了します。
+- `search` はキュレート済みカタログの検索。`--type` で種別を絞ります
+  （threat-actor / malware-family / campaign / report / software-toolkit /
+  vulnerability / collection）
+- `threat` は collection 1 件のレポート。`--related` で関連へピボット
+  （associations, domains, files, hunting_rulesets, ...）
+- `ioc` は形状からインジケーター種別を自動判別（MD5/SHA1/SHA256・IP・
+  ドメイン・URL）し、GTI の `gti_assessment` と関連脅威を返します。複数値は
+  順次処理（`--json` は JSONL）。既定はアクター文脈に絞った応答で、
+  `--full` でフルレポートに opt-in
+- 共通フラグ: `--json` / `--refresh`（キャッシュ迂回）/ `--limit` /
+  `--timeout` / `--config`
+- exit code: 0 = 回答完了（空回答も正答）、1 = 上流障害による欠落・劣化
+  （出力に `INCONCLUSIVE`）、2 = 使用法・設定エラー
 
 ## MCP サーバ
 
-`gti-lookup mcp` は stdio で MCP を話します。このビルドが公開するのは
-`cache_status` と `get_usage` で、lookup 系ツールはエンジンと共に実装されます。
-`get_usage` は組み込みマニュアルを返す正典のツールリファレンスです。
+`gti-lookup mcp` は stdio で MCP を話し、`search_threats` / `get_threat` /
+`get_threat_related` / `lookup_ioc` / `get_ioc_related` / `cache_status` /
+`get_usage` を公開します。`get_usage` が返す組み込みマニュアルが正典の
+ツールリファレンスで、エラー回復表も含みます。ツールエラーは構造化 JSON
+（`{code, message}`）。`get_threat` はツール応答内の description に上限を
+かけます（切り捨ては計上され、`description_max` で解除可能）。
 
 ## ドキュメント
 

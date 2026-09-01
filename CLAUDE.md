@@ -30,14 +30,14 @@ Go 1.25+. **No external dependencies — standard library only.**
 
 ```
 main.go                 CLI entry: main.version → app.Run
-internal/indicator/     (planned) Pre-network gate: classify hash/IP/domain/URL
-internal/gti/           (planned) GTI REST client (x-apikey header, read-only)
+internal/indicator/     Pre-network gate: classify hash/IP/domain/URL from shape
+internal/gti/           GTI REST client (x-apikey header, read-only, stable error slugs)
 internal/cache/         Fixed-TTL JSON-file cache, atomic writes, TTL applied at read time
 internal/config/        Sectioned-TOML subset + GTI_LOOKUP_* / VT_APIKEY resolution
-internal/engine/        (planned) classify → cache → gti → actor-context shaping; shared by CLI + MCP
+internal/engine/        classify → cache → gti → actor-context shaping; shared by CLI + MCP
 internal/app/           Dispatch + search/threat/ioc/cache/mcp; text and JSON rendering
 internal/mcp/           Zero-dep stdio JSON-RPC 2.0 server; embedded get_usage manual
-e2e/                    Live tests behind the `e2e` build tag
+e2e/                    Live tests behind the `e2e` build tag (not written yet)
 ```
 
 Design authority: [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md).
@@ -81,11 +81,13 @@ clocks injected) so tests are deterministic and offline.
 
 ## Status
 
-Scaffold (Phase 2). Working: config, cache, CLI dispatch with version/help
-contract, `cache` command, MCP server with `cache_status` + `get_usage`.
-Not implemented: `search` / `threat` / `ioc`, the gti client, the engine, the
-indicator classifier. Their design is fixed in the RFP; measured upstream
-behaviour goes to AGENTS.md Gotchas as it is learned.
+Core implemented (RFP dev-plan Phase 1): `search` / `threat` / `ioc` commands,
+the five MCP lookup tools, caching, offline test suite green (`-race`, all
+layers). **Not yet done**: live verification against the real GTI API
+(`make e2e` — the e2e tests themselves are unwritten), the RFP's Phase-2
+features (`search_iocs`, `get_threat_rules`, `get_hunting_ruleset`), and
+release. Endpoint shapes that still need live confirmation are flagged in
+AGENTS.md Gotchas; record measurements there as they land.
 
 ## Communication Language
 
