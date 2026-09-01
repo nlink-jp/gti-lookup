@@ -3,12 +3,9 @@
 Threat context from Google Threat Intelligence (GTI) — as a CLI and a local
 MCP server, shipping the **GTI Standard feature set**.
 
-> **Status: under development, pre-release.** The core is implemented,
-> offline-tested, and live-verified against the real GTI API (2026-09-01).
-> The design is fixed in
-> [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md)
-> ([English](docs/en/gti-lookup-rfp.md)); scope decisions since then are
-> recorded in AGENTS.md.
+> Design: [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md)
+> ([English](docs/en/gti-lookup-rfp.md)); scope decisions since the RFP are
+> recorded in AGENTS.md. Live-verified against the real GTI API.
 
 Where the sibling lookup tools each answer one question from free sources,
 this one reads Google's index with a licensed key: which community-reported
@@ -40,7 +37,17 @@ indicator is associated with.
 
 ## Installation
 
-Pre-release: build from source.
+Homebrew (macOS arm64, Apple-notarized build):
+
+```bash
+brew install nlink-jp/tap/gti-lookup
+```
+
+Or download an archive for your platform from the
+[releases page](https://github.com/nlink-jp/gti-lookup/releases)
+(darwin-arm64 zip is notarized; linux amd64/arm64 tar.gz; windows amd64 zip).
+
+Or build from source:
 
 ```bash
 make build        # → dist/gti-lookup

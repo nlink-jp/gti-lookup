@@ -3,10 +3,9 @@
 Google Threat Intelligence (GTI) の脅威情報を引く CLI 兼ローカル MCP サーバ。
 **GTI Standard ティアの機能セット**を搭載しています。
 
-> **Status: 開発中・未リリース。** 中核は実装・オフラインテスト済みで、
-> 実 GTI API に対する live 検証も完了しています（2026-09-01）。設計は
-> [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md) で確定、
-> その後のスコープ判断は AGENTS.md に記録しています。
+> 設計: [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md)。
+> RFP 以降のスコープ判断は AGENTS.md に記録しています。実 GTI API に対して
+> live 検証済みです。
 
 姉妹の lookup 群がそれぞれ無償ソースから 1 つの問いに答えるのに対し、
 本ツールは正規ライセンスキーで Google のインデックスを読みます:
@@ -37,7 +36,17 @@ profiles・DTM — は意図的にスコープ外です: Standard ライセン�
 
 ## インストール
 
-未リリースのため、ソースからビルドしてください。
+Homebrew（macOS arm64、Apple notarize 済みビルド）:
+
+```bash
+brew install nlink-jp/tap/gti-lookup
+```
+
+または [releases ページ](https://github.com/nlink-jp/gti-lookup/releases)
+からプラットフォーム別アーカイブを取得してください（darwin-arm64 zip は
+notarize 済み、linux amd64/arm64 tar.gz、windows amd64 zip）。
+
+ソースからのビルド:
 
 ```bash
 make build        # → dist/gti-lookup
