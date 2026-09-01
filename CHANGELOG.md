@@ -4,16 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2026-09-01
 
-### Changed
+First release: threat context from Google Threat Intelligence as a CLI and a
+local MCP server, live-verified against the real API.
 
-- **Scope pinned to the GTI Standard feature set** (2026-09-01): a feature
-  that cannot be exercised on a Standard licence cannot be tested, and an
-  untestable feature does not ship. `search --type` now offers
-  `vulnerability` (the one catalogue type Standard can search);
-  Enterprise-gated content (curated actors/campaigns/reports, threat
-  profiles, timeline, DTM, collection-linked rulesets) is out of scope.
+**Scope is pinned to the GTI Standard feature set**: a feature that cannot
+be exercised on a Standard licence cannot be tested, and an untestable
+feature does not ship. Enterprise-gated content (curated threat actors,
+campaigns, reports, threat profiles, timeline, DTM, collection-linked
+rulesets) is out of scope; `search --type` offers `vulnerability`, the one
+catalogue type Standard can search.
 
 ### Added
 
