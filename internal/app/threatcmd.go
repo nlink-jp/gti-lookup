@@ -14,12 +14,14 @@ import (
 func runThreat(args []string, version string, stdout, stderr io.Writer) int {
 	var common commonFlags
 	var related, relatedOther string
+	var mitre bool
 	fs := flag.NewFlagSet("threat", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { usage(stderr) }
 	common.register(fs)
 	fs.StringVar(&related, "related", "", "expand one relationship ("+strings.Join(engine.CollectionRelationships, ", ")+")")
 	fs.StringVar(&relatedOther, "related-other", "", "expand an upstream relationship the --related list does not carry")
+	fs.BoolVar(&mitre, "mitre", false, "ATT&CK tree of the collection")
 
 	positional, err := parseInterleaved(fs, args)
 	if err != nil {
@@ -36,6 +38,25 @@ func runThreat(args []string, version string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	ctx := context.Background()
+
+	if mitre {
+		if related != "" || relatedOther != "" {
+			fmt.Fprintln(stderr, "gti-lookup: --mitre and --related are separate views; ask for one at a time")
+			return exitError
+		}
+		res, err := eng.ThreatMitreTree(ctx, id, engine.ThreatOptions{Refresh: common.refresh})
+		if err != nil {
+			return fail(stderr, err)
+		}
+		if common.jsonOut {
+			if err := renderJSON(stdout, res); err != nil {
+				return fail(stderr, err)
+			}
+			return exitOK
+		}
+		renderMitre(stdout, res)
+		return exitOK
+	}
 
 	if related != "" || relatedOther != "" {
 		res, err := eng.ThreatRelated(ctx, id, engine.RelatedOptions{
@@ -125,6 +146,37 @@ func renderThreat(stdout io.Writer, res *engine.Threat) {
 			fmt.Fprintf(stdout, "%s: {%d fields} (--json to expand)\n", k, len(v))
 		}
 	}
+}
+
+// renderMitre prints the tree as tactic/technique identity lines. The raw
+// tree (descriptions, signatures) is --json territory.
+func renderMitre(stdout io.Writer, res *engine.MitreTree) {
+	fmt.Fprintf(stdout, "ATT&CK tree: %s\n", res.ID)
+	tactics, _ := res.Tree["tactics"].([]any)
+	if len(tactics) == 0 {
+		fmt.Fprintln(stdout, "no ATT&CK techniques recorded — a valid answer, not a failure")
+		return
+	}
+	for _, rt := range tactics {
+		m, _ := rt.(map[string]any)
+		if m == nil {
+			continue
+		}
+		fmt.Fprintf(stdout, "%s %s\n", m["id"], m["name"])
+		techs, _ := m["techniques"].([]any)
+		for _, rtc := range techs {
+			tm, _ := rtc.(map[string]any)
+			if tm == nil {
+				continue
+			}
+			if count, ok := tm["count"].(float64); ok && count > 0 {
+				fmt.Fprintf(stdout, "  %-10s %s (%g)\n", tm["id"], tm["name"], count)
+			} else {
+				fmt.Fprintf(stdout, "  %-10s %s\n", tm["id"], tm["name"])
+			}
+		}
+	}
+	fmt.Fprintln(stdout, "(identity view; --json for descriptions and signatures)")
 }
 
 func clip(s string, max int, marker string) string {

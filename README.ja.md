@@ -1,23 +1,23 @@
 # gti-lookup
 
-Google Threat Intelligence (GTI) から、インジケーターにキュレート済みの
-**脅威アクター文脈**を付ける CLI 兼ローカル MCP サーバ。
+Google Threat Intelligence (GTI) の脅威情報を引く CLI 兼ローカル MCP サーバ。
+**GTI Standard ティアの機能セット**を搭載しています。
 
-> **Status: 開発中・未リリース。** 中核（`search` / `threat` / `ioc`、MCP
-> サーバ、キャッシュ）は実装・オフラインテスト済みです。実 GTI API に対する
-> live 検証が未了です。設計は
-> [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md) で確定しています。
+> **Status: 開発中・未リリース。** 中核は実装・オフラインテスト済みで、
+> 実 GTI API に対する live 検証も完了しています（2026-09-01）。設計は
+> [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md) で確定、
+> その後のスコープ判断は AGENTS.md に記録しています。
 
-姉妹の lookup 群が公開・コミュニティソースから答えるのに対し
-（`otx-lookup` はコミュニティのキャンペーン報告を読む）、本ツールは
-Mandiant/Google のキュレート済みカタログを読みます: インジケーターがどの
-**脅威アクター**・**キャンペーン**・**マルウェアファミリー**に関連づくか、
-そのアクターは誰を標的にするか、どのレポートが記述しているか。
-アクター → IOC と IOC → アクターの双方向で引けます。
+姉妹の lookup 群がそれぞれ無償ソースから 1 つの問いに答えるのに対し、
+本ツールは正規ライセンスキーで Google のインデックスを読みます:
+インジケーターがどのコミュニティ報告脅威に**関連づく**か、検体が Google の
+サンドボックスでどう**振る舞う**か、GTI クエリ構文でのコーパス横断
+**IOC 検索**、relationship ピボットと ATT&CK ツリー付きの**脆弱性
+カタログ**、そして自アカウントの **LiveHunt ルールセット**。
 
 読むのは Google のインデックスだけなので、**調査対象にはパケットが一切
-届きません**。また本ツールは**設計として読み取り専用**です — collection への
-書き込みと検体アップロードは恒久的にスコープ外です。
+届きません**。また本ツールは**設計として読み取り専用**です — collection・
+ルールセットへの書き込みと検体アップロードは恒久的にスコープ外です。
 
 ## 必要なもの
 
@@ -29,12 +29,11 @@ gti-lookup は**有償の GTI ライセンス**とその API キーなしには�
 無償の VirusTotal ティアでは不十分で、匿名モードや無償の縮退モードも
 ありません。また、すべてのクエリはライセンス保有者のアカウントに記録されます。
 
-GTI の中でも**ライセンス階梯が回答範囲を決めます**: キュレート済みの
-脅威アクター / キャンペーン / レポートのカタログは GTI **Enterprise /
-Enterprise+** ライセンスのみに見えます。GTI Standard では（2026-09-01 実測）
-アクター種別の検索は空を返し、`gti_assessment` も付きません。vulnerability
-コレクション、コミュニティコレクション（IOC の associations 経由）、および
-全 relationship ピボットは動作します。
+**搭載するのは GTI Standard ティアの機能セットです。** Enterprise 限定の
+カタログ — キュレート済み脅威アクター・キャンペーン・レポート・threat
+profiles・DTM — は意図的にスコープ外です: Standard ライセンスでは実行
+（=テスト）できず、テストできない機能はリリースしないためです。脅威文脈は
+インジケーターが関連づくコミュニティコレクション経由で得られます。
 
 ## インストール
 
@@ -56,23 +55,32 @@ GTI ツール群が使う `VT_APIKEY`）、`GTI_LOOKUP_BASE_URL`、
 ## コマンド
 
 ```
-gti-lookup search <query> [--type threat-actor] [--order relevance-] [--limit N]
-gti-lookup threat <collection-id> [--related <name> | --related-other <name>]
+gti-lookup search <query> [--type vulnerability] [--order relevance-]
+gti-lookup search-iocs <query> [--order last_submission_date-]
+gti-lookup threat <collection-id> [--related <name> | --related-other <name> | --mitre]
 gti-lookup ioc <value ...> [--full] [--related <name> | --related-other <name>]
+gti-lookup behaviour <hash> [--section <name>] [--offset N]
+gti-lookup hunting [ruleset-id]
 gti-lookup cache status|clear
 gti-lookup mcp
 gti-lookup version
 ```
 
-- `search` はキュレート済みカタログの検索。`--type` で種別を絞ります
-  （threat-actor / malware-family / campaign / report / software-toolkit /
-  vulnerability / collection）
-- `threat` は collection 1 件のレポート。`--related` で関連へピボット
-  （associations, domains, files, hunting_rulesets, ...）
+- `search` はコレクションカタログの検索（Standard では vulnerability）
+- `search-iocs` は GTI intelligence 構文での IOC コーパス検索
+  （`entity:file`、`p:60+`、`fs:2024-01-01+`、`tag:` など）
+- `threat` は collection 1 件のレポート。`--related` でピボット、
+  `--mitre` で ATT&CK 戦術/技術ツリー
 - `ioc` は形状からインジケーター種別を自動判別（MD5/SHA1/SHA256・IP・
-  ドメイン・URL）し、GTI の `gti_assessment` と関連脅威を返します。複数値は
-  順次処理（`--json` は JSONL）。既定はアクター文脈に絞った応答で、
+  ドメイン・URL）し、関連脅威（ライセンスが提供する場合は
+  `gti_assessment` も）を返します。複数値は順次処理（`--json` は JSONL）。
   `--full` でフルレポートに opt-in
+- `behaviour` はサンドボックス挙動サマリ: まず区画の索引（サマリ全体は
+  2 MB を超えうる）、`--section` / `--offset` / `--limit` で 1 区画を
+  ページング
+- `hunting` は自アカウントの LiveHunt ルールセット一覧・詳細（YARA 本文
+  込み）。常に live・キャッシュしないので「ルールは反映されたか？」に
+  答えます
 - 共通フラグ: `--json` / `--refresh`（キャッシュ迂回）/ `--limit` /
   `--timeout` / `--config`
 - exit code: 0 = 回答完了（空回答も正答）、1 = 上流障害による欠落・劣化
@@ -80,12 +88,16 @@ gti-lookup version
 
 ## MCP サーバ
 
-`gti-lookup mcp` は stdio で MCP を話し、`search_threats` / `get_threat` /
-`get_threat_related` / `lookup_ioc` / `get_ioc_related` / `cache_status` /
+`gti-lookup mcp` は stdio で MCP を話し、`search_threats` / `search_iocs` /
+`get_threat` / `get_threat_related` / `get_threat_mitre_tree` /
+`lookup_ioc` / `get_ioc_related` / `get_file_behaviour` /
+`list_hunting_rulesets` / `get_hunting_ruleset` / `cache_status` /
 `get_usage` を公開します。`get_usage` が返す組み込みマニュアルが正典の
 ツールリファレンスで、エラー回復表も含みます。ツールエラーは構造化 JSON
-（`{code, message}`）。`get_threat` はツール応答内の description に上限を
-かけます（切り捨ては計上され、`description_max` で解除可能）。
+（`{code, message}`）。大きな応答はツール境界で予算管理します:
+`get_threat` は description に上限（`description_max` で解除）、
+`get_threat_mitre_tree` は既定コンパクト（`full: true` で解除）、
+`get_file_behaviour` は索引→区画展開の 2 段構えです。
 
 ## ドキュメント
 

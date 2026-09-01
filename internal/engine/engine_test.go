@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
@@ -22,8 +23,18 @@ type call struct {
 type fakeClient struct {
 	gets   []call
 	lists  []call
+	datas  []call
 	getFn  func(path string, q url.Values) (*gti.Object, error)
 	listFn func(path string, q url.Values) (*gti.ObjectList, error)
+	dataFn func(path string, q url.Values) (json.RawMessage, error)
+}
+
+func (f *fakeClient) GetData(_ context.Context, path string, q url.Values) (json.RawMessage, error) {
+	f.datas = append(f.datas, call{path, q})
+	if f.dataFn == nil {
+		return json.RawMessage(`{}`), nil
+	}
+	return f.dataFn(path, q)
 }
 
 func (f *fakeClient) GetObject(_ context.Context, path string, q url.Values) (*gti.Object, error) {
@@ -104,7 +115,7 @@ func TestSearchThreatsBuildsFilterAndShapesResult(t *testing.T) {
 	}}
 	e := testEngine(t, fake)
 
-	res, err := e.SearchThreats(context.Background(), "example", SearchOptions{CollectionType: "threat-actor", Limit: 5})
+	res, err := e.SearchThreats(context.Background(), "example", SearchOptions{CollectionType: "vulnerability", Limit: 5})
 	if err != nil {
 		t.Fatalf("SearchThreats: %v", err)
 	}
@@ -113,9 +124,7 @@ func TestSearchThreatsBuildsFilterAndShapesResult(t *testing.T) {
 	if fake.lists[0].path != "collections" {
 		t.Errorf("path = %s", fake.lists[0].path)
 	}
-	// The documented vocabulary is hyphenated, but the live filter parser
-	// accepts only the underscore tokens (measured 2026-09-01).
-	if got := q.Get("filter"); got != "collection_type:threat_actor example" {
+	if got := q.Get("filter"); got != "collection_type:vulnerability example" {
 		t.Errorf("filter = %q", got)
 	}
 	if q.Get("order") != "relevance-" || q.Get("limit") != "5" {
@@ -144,6 +153,12 @@ func TestSearchThreatsValidation(t *testing.T) {
 	}{
 		{"unknown type", func() error {
 			_, err := e.SearchThreats(ctx, "x", SearchOptions{CollectionType: "apt-group"})
+			return err
+		}},
+		{"enterprise-gated type is not shipped", func() error {
+			// Measured 2026-09-01: typed actor searches answer empty on a
+			// Standard licence, so the type is not in the shipped vocabulary.
+			_, err := e.SearchThreats(ctx, "x", SearchOptions{CollectionType: "threat-actor"})
 			return err
 		}},
 		{"empty query and type", func() error {
@@ -409,6 +424,234 @@ func TestIOCRelatedClassifiesAndBuildsPath(t *testing.T) {
 	want := "files/ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa/relationships/contacted_domains"
 	if fake.lists[0].path != want {
 		t.Errorf("path = %s, want %s", fake.lists[0].path, want)
+	}
+}
+
+func TestSearchIOCsBuildsQueryAndShapesRows(t *testing.T) {
+	fake := &fakeClient{listFn: func(path string, q url.Values) (*gti.ObjectList, error) {
+		return &gti.ObjectList{
+			Objects: []gti.Object{{ID: "8433eac2", Type: "file",
+				Attributes: map[string]any{"meaningful_name": "sample.exe", "sha256": "8433eac2..."}}},
+			Cursor: "next",
+			Count:  1234,
+		}, nil
+	}}
+	e := testEngine(t, fake)
+	res, err := e.SearchIOCs(context.Background(), "wannacry entity:file p:60+", IOCSearchOptions{OrderBy: "last_submission_date-", Limit: 5})
+	if err != nil {
+		t.Fatalf("SearchIOCs: %v", err)
+	}
+	got := fake.lists[0]
+	if got.path != "intelligence/search" {
+		t.Errorf("path = %s", got.path)
+	}
+	if got.query.Get("query") != "wannacry entity:file p:60+" || got.query.Get("order") != "last_submission_date-" {
+		t.Errorf("query params = %v", got.query)
+	}
+	if !strings.Contains(got.query.Get("attributes"), "sha256") {
+		t.Errorf("rows not narrowed: %q", got.query.Get("attributes"))
+	}
+	if res.Retrieved != 1 || !res.More || res.TotalUpstream != 1234 {
+		t.Errorf("accounting = %+v", res)
+	}
+	if res.Items[0].Type != "file" || res.Items[0].Attributes["meaningful_name"] != "sample.exe" {
+		t.Errorf("item = %+v", res.Items[0])
+	}
+}
+
+func TestSearchIOCsValidation(t *testing.T) {
+	e := testEngine(t, &fakeClient{})
+	if _, err := e.SearchIOCs(context.Background(), "", IOCSearchOptions{}); Code(err) != CodeInvalidArgument {
+		t.Errorf("empty query accepted: %v", err)
+	}
+	if _, err := e.SearchIOCs(context.Background(), "x", IOCSearchOptions{OrderBy: "a&b=c"}); Code(err) != CodeInvalidArgument {
+		t.Errorf("order injection accepted: %v", err)
+	}
+}
+
+const behaviourFixture = `{
+	"dns_lookups": [{"hostname": "a.example"}, {"hostname": "b.example"}, {"hostname": "c.example"}],
+	"processes_created": ["p1"],
+	"verdicts": ["MALWARE"],
+	"attack_techniques": {"T1055": [{"severity": "HIGH"}], "T1070": [{"severity": "INFO"}]},
+	"has_html_report": true
+}`
+
+func behaviourFake() *fakeClient {
+	return &fakeClient{dataFn: func(path string, q url.Values) (json.RawMessage, error) {
+		return json.RawMessage(behaviourFixture), nil
+	}}
+}
+
+const hash40 = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+
+func TestFileBehaviourIndexNamesSectionsWithCounts(t *testing.T) {
+	e := testEngine(t, behaviourFake())
+	res, err := e.FileBehaviour(context.Background(), hash40, BehaviourOptions{})
+	if err != nil {
+		t.Fatalf("FileBehaviour: %v", err)
+	}
+	found := map[string]int{}
+	for _, s := range res.Sections {
+		found[s.Name] = s.Items
+	}
+	if found["dns_lookups"] != 3 || found["processes_created"] != 1 {
+		t.Errorf("sections = %+v", res.Sections)
+	}
+	// Maps are sections too — a live summary carried 63 keyed entries under
+	// attack_techniques, which would defeat the index if inlined.
+	if found["attack_techniques"] != 2 {
+		t.Errorf("map section missing: %+v", res.Sections)
+	}
+	if _, leaked := res.Summary["attack_techniques"]; leaked {
+		t.Error("map content leaked into the index summary")
+	}
+	// Scalar fields ride along inline instead of hiding behind a section.
+	if res.Summary["has_html_report"] != true {
+		t.Errorf("summary fields = %+v", res.Summary)
+	}
+	if len(res.Items) != 0 {
+		t.Error("the index view leaked section items")
+	}
+}
+
+// A keyed section pages in key order as {key, value} entries.
+func TestFileBehaviourMapSectionPagesByKey(t *testing.T) {
+	e := testEngine(t, behaviourFake())
+	res, err := e.FileBehaviour(context.Background(), hash40,
+		BehaviourOptions{Section: "attack_techniques", Offset: 1, Limit: 1})
+	if err != nil {
+		t.Fatalf("FileBehaviour: %v", err)
+	}
+	if res.Total != 2 || res.Retrieved != 1 || res.More {
+		t.Errorf("accounting = %+v", res)
+	}
+	item, _ := res.Items[0].(map[string]any)
+	if item["key"] != "T1070" {
+		t.Errorf("key order not applied: %+v", res.Items)
+	}
+}
+
+func TestFileBehaviourSectionPagesWithAccounting(t *testing.T) {
+	e := testEngine(t, behaviourFake())
+	res, err := e.FileBehaviour(context.Background(), hash40,
+		BehaviourOptions{Section: "dns_lookups", Offset: 1, Limit: 1})
+	if err != nil {
+		t.Fatalf("FileBehaviour: %v", err)
+	}
+	if res.Total != 3 || res.Retrieved != 1 || !res.More || res.Offset != 1 {
+		t.Errorf("accounting = %+v", res)
+	}
+	item, _ := res.Items[0].(map[string]any)
+	if item["hostname"] != "b.example" {
+		t.Errorf("offset not applied: %+v", res.Items)
+	}
+}
+
+// A wrong section name teaches the caller the real ones instead of guessing.
+func TestFileBehaviourUnknownSectionListsSections(t *testing.T) {
+	e := testEngine(t, behaviourFake())
+	_, err := e.FileBehaviour(context.Background(), hash40, BehaviourOptions{Section: "network"})
+	if Code(err) != CodeInvalidArgument || !strings.Contains(err.Error(), "dns_lookups") {
+		t.Errorf("error does not list the sections: %v", err)
+	}
+}
+
+func TestFileBehaviourRejectsNonFileIndicators(t *testing.T) {
+	e := testEngine(t, behaviourFake())
+	_, err := e.FileBehaviour(context.Background(), "example.com", BehaviourOptions{})
+	if Code(err) != CodeInvalidArgument || !strings.Contains(err.Error(), "files only") {
+		t.Errorf("domain accepted for behaviour: %v", err)
+	}
+}
+
+// The 2 MB summary is fetched once; paging through sections is local.
+func TestFileBehaviourSummaryIsFetchedOnce(t *testing.T) {
+	fake := behaviourFake()
+	e := testEngine(t, fake)
+	ctx := context.Background()
+	if _, err := e.FileBehaviour(ctx, hash40, BehaviourOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.FileBehaviour(ctx, hash40, BehaviourOptions{Section: "dns_lookups"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.FileBehaviour(ctx, hash40, BehaviourOptions{Section: "dns_lookups", Offset: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.datas) != 1 {
+		t.Errorf("summary fetched %d times, want 1", len(fake.datas))
+	}
+}
+
+// Account state answers live: someone toggles a rule in the console and asks
+// whether it took — a cached "disabled" would gaslight them.
+func TestHuntingRulesetsAreNeverCached(t *testing.T) {
+	fake := &fakeClient{listFn: func(path string, q url.Values) (*gti.ObjectList, error) {
+		return &gti.ObjectList{Objects: []gti.Object{{ID: "25811887535",
+			Attributes: map[string]any{"name": "r", "enabled": false, "number_of_rules": float64(2)}}}, Count: -1}, nil
+	}}
+	e := testEngine(t, fake)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		res, err := e.HuntingRulesets(ctx, 0)
+		if err != nil {
+			t.Fatalf("HuntingRulesets: %v", err)
+		}
+		if res.Items[0].Enabled || res.Items[0].NumberOfRules != 2 {
+			t.Errorf("summary = %+v", res.Items[0])
+		}
+	}
+	if len(fake.lists) != 2 {
+		t.Errorf("list served from cache (%d upstream calls, want 2)", len(fake.lists))
+	}
+	if fake.lists[0].path != "intelligence/hunting_rulesets" {
+		t.Errorf("path = %s", fake.lists[0].path)
+	}
+
+	for i := 0; i < 2; i++ {
+		if _, err := e.HuntingRuleset(ctx, "25811887535"); err != nil {
+			t.Fatalf("HuntingRuleset: %v", err)
+		}
+	}
+	if len(fake.gets) != 2 {
+		t.Errorf("detail served from cache (%d upstream calls, want 2)", len(fake.gets))
+	}
+}
+
+func TestHuntingRulesetExtractsRulesText(t *testing.T) {
+	fake := &fakeClient{getFn: func(path string, q url.Values) (*gti.Object, error) {
+		return &gti.Object{ID: "25811887535", Type: "hunting_ruleset", Attributes: map[string]any{
+			"name": "Untitled YARA ruleset", "enabled": false,
+			"rules": "rule x { condition: true }", "rule_names": []any{"x"},
+			"number_of_rules": float64(1), "match_object_type": "file",
+		}}, nil
+	}}
+	e := testEngine(t, fake)
+	res, err := e.HuntingRuleset(context.Background(), "25811887535")
+	if err != nil {
+		t.Fatalf("HuntingRuleset: %v", err)
+	}
+	if res.Rules == "" || res.Enabled || res.MatchObjectType != "file" || len(res.RuleNames) != 1 {
+		t.Errorf("ruleset = %+v", res)
+	}
+}
+
+func TestThreatMitreTreeFetchesAndShapes(t *testing.T) {
+	fake := &fakeClient{dataFn: func(path string, q url.Values) (json.RawMessage, error) {
+		return json.RawMessage(`{"tactics":[{"id":"TA0003","name":"Persistence"}]}`), nil
+	}}
+	e := testEngine(t, fake)
+	res, err := e.ThreatMitreTree(context.Background(), "alienvault_x", ThreatOptions{})
+	if err != nil {
+		t.Fatalf("ThreatMitreTree: %v", err)
+	}
+	if fake.datas[0].path != "collections/alienvault_x/mitre_tree" {
+		t.Errorf("path = %s", fake.datas[0].path)
+	}
+	tactics, _ := res.Tree["tactics"].([]any)
+	if len(tactics) != 1 {
+		t.Errorf("tree = %+v", res.Tree)
 	}
 }
 

@@ -6,7 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Scope pinned to the GTI Standard feature set** (2026-09-01): a feature
+  that cannot be exercised on a Standard licence cannot be tested, and an
+  untestable feature does not ship. `search --type` now offers
+  `vulnerability` (the one catalogue type Standard can search);
+  Enterprise-gated content (curated actors/campaigns/reports, threat
+  profiles, timeline, DTM, collection-linked rulesets) is out of scope.
+
 ### Added
+
+- `search-iocs` command / `search_iocs` tool: IOC corpus search in GTI
+  intelligence query syntax, rows narrowed to identity, corpus-wide hit
+  accounting.
+- `behaviour` command / `get_file_behaviour` tool: sandbox behaviour
+  summary served as a section index (a live summary measured 2.2 MB) with
+  per-section offset/limit paging; keyed sections page in key order.
+- `threat --mitre` / `get_threat_mitre_tree`: the collection's ATT&CK tree —
+  compact identity view by default (the raw tree measured 258 KB),
+  `full: true` / `--json` for everything.
+- `hunting` command / `list_hunting_rulesets` + `get_hunting_ruleset`
+  tools: the account's own LiveHunt rulesets with YARA text, never cached
+  and flagging disabled rulesets ("will not fire").
 
 - Core lookup functionality (read-only, licensed GTI API): `search` /
   `threat` / `ioc` CLI commands and the `search_threats`, `get_threat`,

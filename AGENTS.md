@@ -27,11 +27,12 @@ make package     # release archives + darwin notarization
 
 ```
 main.go                 entry; -ldflags -X main.version
-internal/app/           CLI dispatch (search/threat/ioc/cache/mcp/version/help), rendering
+internal/app/           CLI dispatch + rendering (search/search-iocs/threat/ioc/
+                        behaviour/hunting/cache/mcp/version/help)
 internal/config/        sectioned-TOML subset; GTI_LOOKUP_* / VT_APIKEY env; two TTLs
 internal/cache/         fixed-TTL JSON-file cache, atomic writes, read-time TTL
 internal/mcp/           stdio JSON-RPC 2.0 MCP server; usage.md embedded via go:embed
-internal/gti/           REST client: GetObject/ListObjects, x-apikey, stable error slugs
+internal/gti/           REST client: GetObject/ListObjects/GetData, x-apikey, stable slugs
 internal/engine/        shared core: classify → cache → gti → shape; honesty rules
 internal/indicator/     input classifier (hash/IP/domain/URL, from shape)
 e2e/                    live tests behind the `e2e` tag (not written yet)
@@ -40,18 +41,21 @@ scripts/                codesign/notarize + brew generation (org templates)
 
 ## Current state
 
-Core implemented, offline-green (`make test`, `-race`, httptest +
-fake-client + dummy JSON-RPC harness) and **live-verified 2026-09-01**
-against the real API with a gti-standard key (search, threat report,
-descriptor and full-object pivots, hash/URL lookups, associations paging,
-cache reuse, the MCP face). CLI: `search` / `threat` / `ioc` (multi-target,
-JSONL) / `cache` / `mcp`. MCP: `search_threats`, `get_threat`,
-`get_threat_related`, `lookup_ioc`, `get_ioc_related`, `cache_status`,
-`get_usage`. Exit codes: 0 = answered, 1 = upstream failure/degraded
-(`INCONCLUSIVE`), 2 = usage/config error. Pending: codified e2e tests under
-`e2e/` (the manual live pass above is not yet automated), re-verification
-with an Enterprise-tier key, RFP Phase-2 tools (`search_iocs` /
-`get_threat_rules` / `get_hunting_ruleset`), release.
+Standard-tier feature set implemented, offline-green (`make test`, `-race`,
+httptest + fake-client + dummy JSON-RPC harness) and **live-verified
+2026-09-01** against the real API with a gti-standard key. CLI: `search`
+(vulnerability catalogue) / `search-iocs` (intelligence syntax) / `threat`
+(`--related`, `--mitre`) / `ioc` (multi-target, JSONL) / `behaviour`
+(index → section paging) / `hunting` (LiveHunt list/detail, never cached) /
+`cache` / `mcp`. MCP (12 tools): `search_threats`, `search_iocs`,
+`get_threat`, `get_threat_related`, `get_threat_mitre_tree`, `lookup_ioc`,
+`get_ioc_related`, `get_file_behaviour`, `list_hunting_rulesets`,
+`get_hunting_ruleset`, `cache_status`, `get_usage`. Exit codes: 0 =
+answered, 1 = upstream failure/degraded (`INCONCLUSIVE`), 2 = usage/config
+error. **Scope rule**: Standard tier only — Enterprise-gated features
+(curated actors/campaigns/reports, threat profiles, timeline, DTM,
+collection-linked rulesets) are deliberately not shipped; untestable is
+unshippable. Pending: codified e2e tests under `e2e/`, release.
 
 ## Gotchas
 
@@ -107,4 +111,23 @@ with an Enterprise-tier key, RFP Phase-2 tools (`search_iocs` /
 - Server-side argument validation must be tested through the dummy JSON-RPC
   harness in `internal/mcp/server_test.go`: schema-checking clients reject
   enum violations before they ever reach the server.
+- Behaviour summaries are huge: WannaCry's measured **2.2 MB** with
+  2,000-item sections, and `attack_techniques` is a 63-key **map**, not a
+  list. `engine.FileBehaviour` therefore serves an index (lists AND maps
+  become named sections; only scalars ride inline) and pages one section by
+  offset/limit — maps in key order as `{key, value}`. The raw summary is
+  cached once under its own key; section paging is local.
+- The MITRE tree measured **258 KB** for one community collection. The MCP
+  tool is compact by default (tactic/technique ids+names+counts) with
+  `full: true` as the escape; the CLI `--json` returns the raw tree.
+- LiveHunt endpoints (`/intelligence/hunting_rulesets`) work at Standard
+  (verified live 2026-09-01 against a real ruleset) and are **never
+  cached** — account configuration must answer live. `enabled: false`
+  rulesets exist and must be surfaced as "will not fire".
+- `/intelligence/search` works at Standard, honours `attributes=` narrowing,
+  and reports its total as `meta.total_hits` (a float) instead of
+  `meta.count` — the client folds both into `ObjectList.Count`.
+- Measured Forbidden at Standard (2026-09-01): `/threat_profiles`,
+  `/collections/{id}/timeline/events`, `/dtm/docs/search` (despite a `dtm`
+  privilege flag). Collection-linked `hunting_rulesets` answer `count: 0`.
 - Live measurements that contradict gtidocs.virustotal.com go here, dated.

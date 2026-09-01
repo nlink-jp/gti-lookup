@@ -9,41 +9,37 @@ import (
 	"github.com/nlink-jp/gti-lookup/internal/indicator"
 )
 
-// CollectionTypes are the curated threat kinds the catalogue models, in the
-// documented (hyphenated) vocabulary — the one that appears in response
-// attributes and collection ids.
-var CollectionTypes = []string{
-	"threat-actor", "malware-family", "campaign", "report",
-	"software-toolkit", "vulnerability", "collection",
-}
+// CollectionTypes is the searchable catalogue vocabulary this tool ships:
+// the GTI Standard feature set. The catalogue also holds threat-actor /
+// campaign / report / malware-family collections, but those answer only to
+// Enterprise licences (measured 2026-09-01: typed searches return empty even
+// with query terms) — a type we cannot test is a type we do not ship.
+// get_threat/lookup_ioc remain type-agnostic: whatever id or association the
+// licence can see, they can fetch.
+var CollectionTypes = []string{"vulnerability"}
 
 // CollectionTypeSet is CollectionTypes as a membership set.
 var CollectionTypeSet = toSet(CollectionTypes)
 
 // filterTypeToken translates the documented vocabulary into what the live
 // filter parser actually accepts (measured 2026-09-01): the hyphenated forms
-// from gtidocs are rejected as "Invalid value for collection_type", the
-// underscore tokens are accepted. The campaign/report/collection tokens are
-// accepted too but could not be verified semantically on a gti-standard key
-// (Enterprise-gated content answers empty there) — see AGENTS.md Gotchas.
+// from gtidocs are rejected as "Invalid value for collection_type"; the
+// parser wants underscore tokens. See AGENTS.md Gotchas for the full
+// measured vocabulary, kept there for when an Enterprise key ever widens
+// CollectionTypes again.
 var filterTypeToken = map[string]string{
-	"threat-actor":     "threat_actor",
-	"malware-family":   "malware_family",
-	"campaign":         "campaigns",
-	"report":           "threat_report",
-	"software-toolkit": "software_toolkit",
-	"vulnerability":    "vulnerability",
-	"collection":       "ioc_collection",
+	"vulnerability": "vulnerability",
 }
 
 var collectionTypesJoined = strings.Join(CollectionTypes, ", ")
 
 // CollectionRelationships are the curated pivots from a collection. The
 // upstream list is longer; these are the ones that serve actor investigation.
-// Anything else goes through relationship_other.
+// Anything else goes through relationship_other (hunting_rulesets moved
+// there: at Standard tier it never carries data to test against).
 var CollectionRelationships = []string{
 	"associations", "attack_techniques", "campaigns", "domains", "files",
-	"hunting_rulesets", "ip_addresses", "malware_families", "reports",
+	"ip_addresses", "malware_families", "reports",
 	"software_toolkits", "suspected_threat_actors", "threat_actors",
 	"urls", "vulnerabilities",
 }
@@ -82,7 +78,6 @@ var relObjectAttributes = map[string]string{
 	"threat_actors":           summaryAttributes,
 	"vulnerabilities":         summaryAttributes,
 	"attack_techniques":       "name",
-	"hunting_rulesets":        "name",
 }
 
 // summaryAttributes is the narrowed attribute set for collection summaries.
@@ -90,6 +85,12 @@ const summaryAttributes = "name,collection_type,alt_names,last_modification_date
 
 // searchAttributes is what a search result row carries.
 const searchAttributes = "name,collection_type,alt_names,creation_date,last_modification_date"
+
+// iocSearchAttributes narrows an intelligence-search row to identity: the
+// union of the per-type identity fields (absent ones are simply omitted).
+// Verified 2026-09-01: the attributes parameter works on /intelligence/search.
+const iocSearchAttributes = "meaningful_name,type_description,size,md5,sha1,sha256," +
+	"url,last_final_url,title,creation_date,first_submission_date,last_submission_date"
 
 // iocAttributes is the trimmed default per indicator kind: identity plus
 // gti_assessment. Everything a sibling lookup tool owns (per-engine verdicts,
@@ -147,6 +148,83 @@ type Related struct {
 	More          bool          `json:"more,omitempty"`
 	TotalUpstream int           `json:"total_upstream,omitempty"`
 	Items         []RelatedItem `json:"items"`
+}
+
+// IOCItem is one intelligence-search hit, narrowed to identity.
+type IOCItem struct {
+	ID         string         `json:"id"`
+	Type       string         `json:"type"`
+	Attributes map[string]any `json:"attributes,omitempty"`
+}
+
+// IOCSearch is the result of SearchIOCs.
+type IOCSearch struct {
+	Query         string    `json:"query"`
+	OrderBy       string    `json:"order_by,omitempty"`
+	Retrieved     int       `json:"retrieved"`
+	More          bool      `json:"more,omitempty"`
+	TotalUpstream int       `json:"total_upstream,omitempty"`
+	Items         []IOCItem `json:"items"`
+}
+
+// BehaviourSection is one section of a sandbox behaviour summary, as listed
+// by the index view.
+type BehaviourSection struct {
+	Name  string `json:"name"`
+	Items int    `json:"items"`
+}
+
+// Behaviour is the result of FileBehaviour. Without a section it is an
+// index — the summary for WannaCry alone is over 2 MB, so the sections are
+// named and counted rather than returned; with a section it is one section's
+// items, paged by offset/limit so every entry stays reachable.
+type Behaviour struct {
+	Value     string             `json:"value"`
+	Sections  []BehaviourSection `json:"sections,omitempty"`
+	Summary   map[string]any     `json:"summary_fields,omitempty"`
+	Section   string             `json:"section,omitempty"`
+	Total     int                `json:"total,omitempty"`
+	Offset    int                `json:"offset,omitempty"`
+	Retrieved int                `json:"retrieved,omitempty"`
+	More      bool               `json:"more,omitempty"`
+	Items     []any              `json:"items,omitempty"`
+}
+
+// MitreTree is the result of ThreatMitreTree: the collection's ATT&CK tree
+// as upstream sends it. The MCP layer compacts it — the raw tree for one
+// community collection measured 258 KB.
+type MitreTree struct {
+	ID   string         `json:"id"`
+	Tree map[string]any `json:"tree"`
+}
+
+// HuntingRulesetSummary is one row of the account's LiveHunt ruleset list.
+type HuntingRulesetSummary struct {
+	ID            string `json:"id"`
+	Name          string `json:"name,omitempty"`
+	Enabled       bool   `json:"enabled"`
+	NumberOfRules int    `json:"number_of_rules,omitempty"`
+}
+
+// HuntingRulesetList is the result of HuntingRulesets. This is the account's
+// own live configuration, so it is never cached.
+type HuntingRulesetList struct {
+	Retrieved int                     `json:"retrieved"`
+	More      bool                    `json:"more,omitempty"`
+	Items     []HuntingRulesetSummary `json:"items"`
+}
+
+// HuntingRuleset is one LiveHunt ruleset, rules text included.
+type HuntingRuleset struct {
+	ID              string   `json:"id"`
+	Name            string   `json:"name,omitempty"`
+	Enabled         bool     `json:"enabled"`
+	MatchObjectType string   `json:"match_object_type,omitempty"`
+	NumberOfRules   int      `json:"number_of_rules,omitempty"`
+	RuleNames       []string `json:"rule_names,omitempty"`
+	Rules           string   `json:"rules,omitempty"`
+	CreationDate    string   `json:"creation_date,omitempty"`
+	Modified        string   `json:"modification_date,omitempty"`
 }
 
 // IOC is the result of LookupIOC.

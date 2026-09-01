@@ -115,6 +115,26 @@ func (c *Client) GetObject(ctx context.Context, path string, query url.Values) (
 	return &envelope.Data, nil
 }
 
+// GetData fetches an endpoint whose data member is not an object list — the
+// behaviour summary and the MITRE tree return plain documents there — and
+// hands the raw data back for the caller to shape.
+func (c *Client) GetData(ctx context.Context, path string, query url.Values) (json.RawMessage, error) {
+	body, err := c.get(ctx, path, query)
+	if err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, &Error{Code: CodeDecode, Message: "decode data: " + err.Error()}
+	}
+	if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
+		return nil, &Error{Code: CodeDecode, Message: "decode data: response carries no data member"}
+	}
+	return envelope.Data, nil
+}
+
 // ListObjects fetches one page of objects: GET {base}/{path}?{query}.
 func (c *Client) ListObjects(ctx context.Context, path string, query url.Values) (*ObjectList, error) {
 	body, err := c.get(ctx, path, query)
@@ -126,6 +146,9 @@ func (c *Client) ListObjects(ctx context.Context, path string, query url.Values)
 		Meta struct {
 			Cursor string `json:"cursor"`
 			Count  *int   `json:"count"`
+			// The intelligence search reports its total under a different
+			// name — and as a float.
+			TotalHits *float64 `json:"total_hits"`
 		} `json:"meta"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
@@ -134,6 +157,8 @@ func (c *Client) ListObjects(ctx context.Context, path string, query url.Values)
 	list := &ObjectList{Objects: envelope.Data, Cursor: envelope.Meta.Cursor, Count: -1}
 	if envelope.Meta.Count != nil {
 		list.Count = *envelope.Meta.Count
+	} else if envelope.Meta.TotalHits != nil {
+		list.Count = int(*envelope.Meta.TotalHits)
 	}
 	return list, nil
 }

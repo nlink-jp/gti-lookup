@@ -50,15 +50,15 @@ func setupIntegration(t *testing.T) (*http.ServeMux, *atomic.Int64) {
 func TestSearchEndToEnd(t *testing.T) {
 	mux, _ := setupIntegration(t)
 	mux.HandleFunc("/collections", func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("filter"); got != "collection_type:threat_actor lazarus" {
+		if got := r.URL.Query().Get("filter"); got != "collection_type:vulnerability log4j" {
 			t.Errorf("filter = %q", got)
 		}
-		_, _ = w.Write([]byte(`{"data":[{"id":"threat-actor--x","type":"collection","attributes":` +
-			`{"name":"Example Actor","collection_type":"threat-actor"}}],"meta":{"count":1}}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"vulnerability--cve-2021-44228","type":"collection","attributes":` +
+			`{"name":"CVE-2021-44228","collection_type":"vulnerability"}}],"meta":{"count":1}}`))
 	})
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"search", "lazarus", "--type", "threat-actor", "--json"}, "test", nil, &stdout, &stderr)
+	code := run([]string{"search", "log4j", "--type", "vulnerability", "--json"}, "test", nil, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
 	}
@@ -69,6 +69,98 @@ func TestSearchEndToEnd(t *testing.T) {
 	threats, _ := res["threats"].([]any)
 	if len(threats) != 1 {
 		t.Errorf("threats = %v", res["threats"])
+	}
+}
+
+func TestSearchIOCsEndToEnd(t *testing.T) {
+	mux, _ := setupIntegration(t)
+	mux.HandleFunc("/intelligence/search", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("query"); got != "wannacry entity:file" {
+			t.Errorf("query = %q", got)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"8433eac2","type":"file","attributes":` +
+			`{"meaningful_name":"sample.exe"}}],"meta":{"cursor":"n","total_hits":1234}}`))
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"search-iocs", "wannacry", "entity:file"}, "test", nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"sample.exe", "retrieved 1 of 1234"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestBehaviourEndToEnd(t *testing.T) {
+	mux, _ := setupIntegration(t)
+	mux.HandleFunc("/files/da39a3ee5e6b4b0d3255bfef95601890afd80709/behaviour_summary",
+		func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"data":{"dns_lookups":[{"hostname":"a.example"},{"hostname":"b.example"}],` +
+				`"verdicts":["MALWARE"]}}`))
+		})
+
+	var index, section, stderr bytes.Buffer
+	if code := run([]string{"behaviour", "da39a3ee5e6b4b0d3255bfef95601890afd80709"}, "test", nil, &index, &stderr); code != exitOK {
+		t.Fatalf("index: exit = %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(index.String(), "dns_lookups") || !strings.Contains(index.String(), "2") {
+		t.Errorf("index output:\n%s", index.String())
+	}
+	if code := run([]string{"behaviour", "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+		"--section", "dns_lookups", "--limit", "1", "--offset", "1"}, "test", nil, &section, &stderr); code != exitOK {
+		t.Fatalf("section: exit = %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(section.String(), "b.example") || !strings.Contains(section.String(), "items 2-2 of 2") {
+		t.Errorf("section output:\n%s", section.String())
+	}
+}
+
+func TestHuntingEndToEnd(t *testing.T) {
+	mux, _ := setupIntegration(t)
+	mux.HandleFunc("/intelligence/hunting_rulesets", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"25811887535","type":"hunting_ruleset","attributes":` +
+			`{"name":"Untitled YARA ruleset","enabled":false,"number_of_rules":1}}]}`))
+	})
+	mux.HandleFunc("/intelligence/hunting_rulesets/25811887535", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"id":"25811887535","type":"hunting_ruleset","attributes":` +
+			`{"name":"Untitled YARA ruleset","enabled":false,"rules":"rule x { condition: true }"}}}`))
+	})
+
+	var list, one, stderr bytes.Buffer
+	if code := run([]string{"hunting"}, "test", nil, &list, &stderr); code != exitOK {
+		t.Fatalf("list: exit = %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(list.String(), "disabled") {
+		t.Errorf("list does not show the enabled state:\n%s", list.String())
+	}
+	if code := run([]string{"hunting", "25811887535"}, "test", nil, &one, &stderr); code != exitOK {
+		t.Fatalf("detail: exit = %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(one.String(), "will not fire") || !strings.Contains(one.String(), "rule x") {
+		t.Errorf("detail output:\n%s", one.String())
+	}
+}
+
+func TestThreatMitreEndToEnd(t *testing.T) {
+	mux, _ := setupIntegration(t)
+	mux.HandleFunc("/collections/alienvault_x/mitre_tree", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"tactics":[{"id":"TA0003","name":"Persistence","techniques":` +
+			`[{"id":"T1070","name":"Indicator Removal","count":2}]}]}}`))
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"threat", "alienvault_x", "--mitre"}, "test", nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"TA0003 Persistence", "T1070", "(2)"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("output is missing %q:\n%s", want, stdout.String())
+		}
 	}
 }
 

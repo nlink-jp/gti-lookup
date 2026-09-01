@@ -4,13 +4,17 @@
 
 ## Purpose
 
-CLI + local MCP server that attaches **curated threat-actor context** to an
-indicator or a search term by reading **Google Threat Intelligence**
-(`https://www.virustotal.com/api/v3`, licensed key). Where `otx-lookup`
-answers from community reports, this one answers from the Mandiant/Google
-curated catalogue: which threat actor, campaign or malware family an indicator
-is associated with, who that actor targets, and which reports describe it —
-in both directions, actor → IOCs and IOC → actor.
+CLI + local MCP server reading **Google Threat Intelligence**
+(`https://www.virustotal.com/api/v3`, licensed key) with the **GTI Standard
+feature set**: association context and sandbox behaviour for an indicator,
+IOC corpus search in GTI query syntax, the vulnerability catalogue with
+pivots and ATT&CK trees, and the account's own LiveHunt rulesets.
+
+**Standard-tier scope is a release rule, not an accident**: the
+Enterprise-only catalogue (curated threat actors, campaigns, reports, threat
+profiles, DTM) cannot be exercised on a Standard licence, an untestable
+feature does not ship, and Enterprise will not be purchased. Do not add
+Enterprise-gated features speculatively.
 
 Only Google's index is read, so **no packet reaches the target under
 investigation**.
@@ -71,6 +75,14 @@ clocks injected) so tests are deterministic and offline.
 - **Two cache TTLs.** Collection answers age on `ThreatTTL` (slow-moving,
   default 24 h), IOC answers on `IOCTTL` (default 1 h). TTLs are applied at
   read time. Degraded results are never cached.
+- **Account state is never cached.** LiveHunt ruleset answers are always
+  live: someone toggles a rule in the console and asks whether it took — a
+  cached "disabled" would gaslight them.
+- **Huge documents are served index-first.** A behaviour summary measured
+  2.2 MB and a MITRE tree 258 KB. `behaviour` answers with a section index
+  and pages one section on demand (maps page in key order); the MCP MITRE
+  tool is compact by default with `full: true` as the escape. Never inline
+  either document whole into a tool response.
 - **A partial answer is never presented as a complete one.** Report what
   upstream holds next to what was retrieved; an answer built on a failed
   lookup is never reported as "no associations".
@@ -81,14 +93,15 @@ clocks injected) so tests are deterministic and offline.
 
 ## Status
 
-Core implemented (RFP dev-plan Phase 1): `search` / `threat` / `ioc` commands,
-the five MCP lookup tools, caching, offline test suite green (`-race`, all
-layers), and **live-verified 2026-09-01 with a gti-standard key** — see
-AGENTS.md Gotchas for the dated measurements, including the
-`collection_type` filter vocabulary and the Enterprise tier gate on the
-curated actor catalogue. **Not yet done**: codified e2e tests under `e2e/`,
-re-verification with an Enterprise key, the RFP's Phase-2 features
-(`search_iocs`, `get_threat_rules`, `get_hunting_ruleset`), and release.
+Standard-tier feature set implemented and **live-verified 2026-09-01** with a
+gti-standard key: `search` / `search-iocs` / `threat` (`--related`,
+`--mitre`) / `ioc` / `behaviour` / `hunting` commands and the twelve MCP
+tools, offline test suite green (`-race`, all layers). See AGENTS.md Gotchas
+for the dated measurements (filter vocabulary, tier gate, behaviour summary
+size). **Not yet done**: codified e2e tests under `e2e/` (the manual live
+pass is not yet automated), and release. Dropped by the standard-tier rule:
+`get_collection_rules`-style pivots (empty at Standard), collection
+timeline (Forbidden), threat profiles (Forbidden), DTM (Forbidden).
 
 ## Communication Language
 

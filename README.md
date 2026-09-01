@@ -1,24 +1,25 @@
 # gti-lookup
 
-Curated threat-actor context for an indicator, from Google Threat Intelligence
-(GTI) — as a CLI and a local MCP server.
+Threat context from Google Threat Intelligence (GTI) — as a CLI and a local
+MCP server, shipping the **GTI Standard feature set**.
 
-> **Status: under development, pre-release.** The core is implemented and
-> tested offline (`search` / `threat` / `ioc`, the MCP server, caching);
-> live verification against the real GTI API is still pending. The design is
-> fixed in [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md)
-> ([English](docs/en/gti-lookup-rfp.md)).
+> **Status: under development, pre-release.** The core is implemented,
+> offline-tested, and live-verified against the real GTI API (2026-09-01).
+> The design is fixed in
+> [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md)
+> ([English](docs/en/gti-lookup-rfp.md)); scope decisions since then are
+> recorded in AGENTS.md.
 
-Where the sibling lookup tools answer from public or community sources —
-`otx-lookup` reads community campaign reports — this one reads the
-Mandiant/Google curated catalogue: which **threat actor**, **campaign** or
-**malware family** an indicator is associated with, who that actor targets,
-and which reports describe it. It works in both directions: actor → IOCs and
-IOC → actor.
+Where the sibling lookup tools each answer one question from free sources,
+this one reads Google's index with a licensed key: which community-reported
+threats an indicator is **associated** with, how a sample **behaves** in
+Google's sandboxes, corpus-wide **IOC search** in GTI query syntax, the
+**vulnerability catalogue** with relationship pivots and ATT&CK trees, and
+your own **LiveHunt rulesets**.
 
 Only Google's index is read, so **no packet reaches the target under
-investigation**. The tool is **read-only by design**: no collection writes and
-no sample uploads, permanently.
+investigation**. The tool is **read-only by design**: no collection writes,
+no ruleset writes, and no sample uploads, permanently.
 
 ## Requirements
 
@@ -30,12 +31,12 @@ nothing without a **paid GTI licence** and its API key. The free VirusTotal
 tier is not sufficient, and there is no anonymous or degraded free mode.
 Every query is recorded against the licence holder's account.
 
-Within GTI, the **licence tier decides what answers**: the curated threat
-actor / campaign / report catalogue is visible only to GTI **Enterprise /
-Enterprise+** licences. On GTI Standard (measured 2026-09-01), type-filtered
-actor searches answer empty and `gti_assessment` is absent; vulnerability
-collections, community collections (reached via an IOC's associations) and
-every relationship pivot still work.
+**This tool ships the GTI Standard feature set.** The Enterprise-only
+catalogue — curated threat actors, campaigns, reports, threat profiles,
+DTM — is deliberately out of scope: those features cannot be exercised (and
+therefore cannot be tested) on a Standard licence, and an untestable feature
+does not ship. Threat context arrives through the community collections an
+indicator is associated with.
 
 ## Installation
 
@@ -57,24 +58,31 @@ example file documents every setting.
 ## Commands
 
 ```
-gti-lookup search <query> [--type threat-actor] [--order relevance-] [--limit N]
-gti-lookup threat <collection-id> [--related <name> | --related-other <name>]
+gti-lookup search <query> [--type vulnerability] [--order relevance-]
+gti-lookup search-iocs <query> [--order last_submission_date-]
+gti-lookup threat <collection-id> [--related <name> | --related-other <name> | --mitre]
 gti-lookup ioc <value ...> [--full] [--related <name> | --related-other <name>]
+gti-lookup behaviour <hash> [--section <name>] [--offset N]
+gti-lookup hunting [ruleset-id]
 gti-lookup cache status|clear
 gti-lookup mcp
 gti-lookup version
 ```
 
-- `search` queries the curated catalogue; `--type` narrows to one kind
-  (threat-actor, malware-family, campaign, report, software-toolkit,
-  vulnerability, collection).
-- `threat` prints one collection's report; `--related` expands a pivot
-  (associations, domains, files, hunting_rulesets, ...).
+- `search` queries the collections catalogue (on Standard: vulnerabilities).
+- `search-iocs` searches the IOC corpus with GTI intelligence syntax
+  (`entity:file`, `p:60+`, `fs:2024-01-01+`, `tag:`, ...).
+- `threat` prints one collection's report; `--related` expands a pivot,
+  `--mitre` the ATT&CK tactic/technique tree.
 - `ioc` detects the indicator type from its shape (MD5/SHA1/SHA256, IP,
-  domain, URL) and answers with GTI's `gti_assessment` plus the associated
-  threats. Several values run in sequence (`--json` emits JSONL). By default
-  the answer is trimmed to the actor context; `--full` opts into the whole
-  report.
+  domain, URL) and answers with the associated threats (plus
+  `gti_assessment` where the licence provides it). Several values run in
+  sequence (`--json` emits JSONL). `--full` opts into the whole report.
+- `behaviour` reads the sandbox behaviour summary: an index of sections
+  first (a full summary can exceed 2 MB), then one section paged with
+  `--section` / `--offset` / `--limit`.
+- `hunting` lists your LiveHunt rulesets (or shows one, YARA text included)
+  — always live, never cached, so it answers "did my rule take?".
 - Shared flags: `--json`, `--refresh` (bypass the cache), `--limit`,
   `--timeout`, `--config`.
 - Exit codes: 0 answered (an empty answer is a valid answer), 1 an upstream
@@ -84,12 +92,16 @@ gti-lookup version
 ## MCP server
 
 `gti-lookup mcp` speaks MCP over stdio and exposes `search_threats`,
-`get_threat`, `get_threat_related`, `lookup_ioc`, `get_ioc_related`,
-`cache_status` and `get_usage`. `get_usage` returns the embedded manual and
-is the canonical tool reference, including the error-recovery table. Tool
-errors are structured JSON (`{code, message}`); `get_threat` caps the
-description field inside tool responses (accounted, escapable via
-`description_max`).
+`search_iocs`, `get_threat`, `get_threat_related`, `get_threat_mitre_tree`,
+`lookup_ioc`, `get_ioc_related`, `get_file_behaviour`,
+`list_hunting_rulesets`, `get_hunting_ruleset`, `cache_status` and
+`get_usage`. `get_usage` returns the embedded manual and is the canonical
+tool reference, including the error-recovery table. Tool errors are
+structured JSON (`{code, message}`), and large answers are budgeted at the
+tool boundary: `get_threat` caps descriptions (escapable via
+`description_max`), `get_threat_mitre_tree` is compact by default
+(`full: true` escapes), and `get_file_behaviour` serves an index before
+sections.
 
 ## Documentation
 

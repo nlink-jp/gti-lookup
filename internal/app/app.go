@@ -35,10 +35,16 @@ func run(args []string, version string, stdin io.Reader, stdout, stderr io.Write
 	switch cmd {
 	case "search":
 		return runSearch(rest, version, stdout, stderr)
+	case "search-iocs":
+		return runSearchIOCs(rest, version, stdout, stderr)
 	case "threat":
 		return runThreat(rest, version, stdout, stderr)
 	case "ioc":
 		return runIOC(rest, version, stdout, stderr)
+	case "behaviour":
+		return runBehaviour(rest, version, stdout, stderr)
+	case "hunting":
+		return runHunting(rest, version, stdout, stderr)
 	case "cache":
 		return runCache(rest, stdout, stderr)
 	case "mcp":
@@ -73,9 +79,12 @@ Usage:
   gti-lookup <command> [flags] [target...]
 
 Commands:
-  search <query>           Search threats (actors, campaigns, malware families, ...)
-  threat <collection-id>   Curated report for one collection; --related pivots
-  ioc <value ...>          Actor context for hashes, domains, IPs or URLs
+  search <query>           Search the collections catalogue (vulnerabilities)
+  search-iocs <query>      Search the IOC corpus with GTI intelligence syntax
+  threat <collection-id>   Report for one collection; --related pivots, --mitre ATT&CK
+  ioc <value ...>          Threat context for hashes, domains, IPs or URLs
+  behaviour <hash>         Sandbox behaviour summary; --section expands one part
+  hunting [ruleset-id]     Your LiveHunt rulesets (list, or one with rules text)
   cache status             Show the result-cache state
   cache clear              Clear the result cache
   mcp                      Run as a local MCP server (stdio)
@@ -89,17 +98,25 @@ Shared flags:
   -c, --config <path>      Config file (default ~/.config/gti-lookup/config.toml)
 
 search flags:
-  --type <t>               threat-actor, malware-family, campaign, report,
-                           software-toolkit, vulnerability, collection
+  --type <t>               vulnerability
   --order <key>            relevance-, creation_date+, ... (default relevance-)
 
+search-iocs flags:
+  --order <key>            e.g. last_submission_date- (default: upstream ranking)
+
 threat / ioc flags:
-  --related <name>         Expand one relationship (curated list; see help output
-                           of the flag or get_usage)
+  --related <name>         Expand one relationship (curated list; see get_usage)
   --related-other <name>   Send an uncurated relationship name upstream as-is
 
+threat flags:
+  --mitre                  ATT&CK tactics/techniques tree of the collection
+
 ioc flags:
-  --full                   Full report instead of the trimmed actor context
+  --full                   Full report instead of the trimmed threat context
+
+behaviour flags:
+  --section <name>         One section from the index (e.g. dns_lookups)
+  --offset <n>             Items to skip inside the section
 
 The indicator type is detected from its shape: MD5/SHA1/SHA256 hash, IPv4,
 IPv6, URL (scheme://...), or domain.
@@ -114,6 +131,11 @@ mandatory, and every query is recorded against the licence holder's account.
 Only Google's index is read, so no packet reaches the target under
 investigation. The tool is read-only by design — no collection writes and no
 sample uploads, permanently.
+
+This tool ships the GTI Standard feature set. The Enterprise-only catalogue
+(curated threat actors, campaigns, reports, threat profiles, DTM) is out of
+scope; threat context arrives through the community collections an indicator
+is associated with.
 
 The default ioc answer is deliberately trimmed to GTI's assessment and the
 associated threats: per-engine verdicts, passive DNS, reputation feeds and

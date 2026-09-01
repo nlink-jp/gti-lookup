@@ -27,7 +27,9 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nlink-jp/gti-lookup/internal/cache"
@@ -41,6 +43,7 @@ import (
 type Client interface {
 	GetObject(ctx context.Context, path string, query url.Values) (*gti.Object, error)
 	ListObjects(ctx context.Context, path string, query url.Values) (*gti.ObjectList, error)
+	GetData(ctx context.Context, path string, query url.Values) (json.RawMessage, error)
 }
 
 // Error codes this layer adds to the gti vocabulary.
@@ -371,6 +374,274 @@ func (e *Engine) IOCRelated(ctx context.Context, value string, opts RelatedOptio
 	return lookupCached(e, key, e.cfg.IOCTTL, opts.Refresh, func() (*Related, bool, error) {
 		return e.fetchRelated(ctx, iocPath(ind), ind.Value, rel, limit)
 	})
+}
+
+// IOCSearchOptions parameterise SearchIOCs.
+type IOCSearchOptions struct {
+	OrderBy string // e.g. "last_submission_date-"; empty lets upstream decide
+	Limit   int
+	Refresh bool
+}
+
+// SearchIOCs runs a GTI intelligence query across the IOC corpus (files,
+// URLs, domains, IPs — the query's entity: modifier picks). Rows are
+// narrowed to identity; lookup_ioc expands one.
+func (e *Engine) SearchIOCs(ctx context.Context, query string, opts IOCSearchOptions) (*IOCSearch, error) {
+	if err := e.requireKey(); err != nil {
+		return nil, err
+	}
+	if query == "" {
+		return nil, &Error{Code: CodeInvalidArgument, Message: "an intelligence search needs a query"}
+	}
+	if opts.OrderBy != "" && !orderPattern.MatchString(opts.OrderBy) {
+		return nil, &Error{Code: CodeInvalidArgument,
+			Message: fmt.Sprintf("order_by %q is not an order key (e.g. last_submission_date-)", opts.OrderBy)}
+	}
+	limit, err := e.resolveLimit(opts.Limit)
+	if err != nil {
+		return nil, err
+	}
+
+	key := cache.Key("iocsearch", orDefault(opts.OrderBy, "default"), strconv.Itoa(limit), query)
+	return lookupCached(e, key, e.cfg.IOCTTL, opts.Refresh, func() (*IOCSearch, bool, error) {
+		params := url.Values{
+			"query":      {query},
+			"limit":      {strconv.Itoa(limit)},
+			"attributes": {iocSearchAttributes},
+		}
+		if opts.OrderBy != "" {
+			params.Set("order", opts.OrderBy)
+		}
+		list, err := e.client.ListObjects(ctx, "intelligence/search", params)
+		if err != nil {
+			return nil, false, err
+		}
+		res := &IOCSearch{
+			Query:         query,
+			OrderBy:       opts.OrderBy,
+			Retrieved:     len(list.Objects),
+			More:          list.Cursor != "",
+			TotalUpstream: list.Count,
+			Items:         make([]IOCItem, 0, len(list.Objects)),
+		}
+		for _, o := range list.Objects {
+			res.Items = append(res.Items, IOCItem{ID: o.ID, Type: o.Type, Attributes: o.Attributes})
+		}
+		return res, true, nil
+	})
+}
+
+// BehaviourOptions parameterise FileBehaviour.
+type BehaviourOptions struct {
+	// Section selects one summary section by name; empty returns the index.
+	Section string
+	Offset  int
+	Limit   int
+	Refresh bool
+}
+
+// FileBehaviour answers from the sandbox behaviour summary of a file. The
+// whole summary is fetched once and cached (WannaCry's measures over 2 MB),
+// then served as an index of sections, or one section paged by offset/limit.
+func (e *Engine) FileBehaviour(ctx context.Context, value string, opts BehaviourOptions) (*Behaviour, error) {
+	if err := e.requireKey(); err != nil {
+		return nil, err
+	}
+	ind, err := indicator.Classify(value)
+	if err != nil {
+		return nil, &Error{Code: CodeInvalidArgument, Message: err.Error()}
+	}
+	if ind.Kind != indicator.File {
+		return nil, &Error{Code: CodeInvalidArgument,
+			Message: fmt.Sprintf("behaviour reports exist for files only; %q is a %s", value, ind.Kind)}
+	}
+	if opts.Offset < 0 {
+		return nil, &Error{Code: CodeInvalidArgument, Message: "offset cannot be negative"}
+	}
+	limit, err := e.resolveLimit(opts.Limit)
+	if err != nil {
+		return nil, err
+	}
+
+	summary, err := e.behaviourSummary(ctx, ind.Value, opts.Refresh)
+	if err != nil {
+		return nil, err
+	}
+
+	if opts.Section == "" {
+		res := &Behaviour{Value: ind.Value}
+		for name, v := range summary {
+			switch tv := v.(type) {
+			case []any:
+				res.Sections = append(res.Sections, BehaviourSection{Name: name, Items: len(tv)})
+			case map[string]any:
+				// Maps are sections too: attack_techniques alone carried 63
+				// keyed entries in a live summary — inlining that into the
+				// index would defeat the index.
+				res.Sections = append(res.Sections, BehaviourSection{Name: name, Items: len(tv)})
+			default:
+				// Scalars (verdict confidence, flags) ride along inline.
+				if res.Summary == nil {
+					res.Summary = map[string]any{}
+				}
+				res.Summary[name] = v
+			}
+		}
+		sort.Slice(res.Sections, func(i, j int) bool { return res.Sections[i].Name < res.Sections[j].Name })
+		return res, nil
+	}
+
+	v, ok := summary[opts.Section]
+	if !ok {
+		return nil, &Error{Code: CodeInvalidArgument,
+			Message: fmt.Sprintf("no section %q in this summary; sections: %s", opts.Section, strings.Join(sectionNames(summary), ", "))}
+	}
+	var items []any
+	switch tv := v.(type) {
+	case []any:
+		items = tv
+	case map[string]any:
+		// A keyed section pages in key order, each entry as {key, value}.
+		keys := make([]string, 0, len(tv))
+		for k := range tv {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			items = append(items, map[string]any{"key": k, "value": tv[k]})
+		}
+	default:
+		items = []any{v}
+	}
+	res := &Behaviour{Value: ind.Value, Section: opts.Section, Total: len(items), Offset: opts.Offset}
+	if opts.Offset < len(items) {
+		end := min(opts.Offset+limit, len(items))
+		res.Items = items[opts.Offset:end]
+	}
+	res.Retrieved = len(res.Items)
+	res.More = opts.Offset+res.Retrieved < res.Total
+	return res, nil
+}
+
+// behaviourSummary fetches and caches the raw summary document, so paging
+// through sections costs one upstream request in total.
+func (e *Engine) behaviourSummary(ctx context.Context, hash string, refresh bool) (map[string]any, error) {
+	key := cache.Key("behaviour", hash)
+	if !refresh {
+		if raw, ok := e.store.Get(key, e.now(), e.cfg.IOCTTL); ok {
+			var m map[string]any
+			if err := json.Unmarshal(raw, &m); err == nil {
+				return m, nil
+			}
+		}
+	}
+	raw, err := e.client.GetData(ctx, "files/"+hash+"/behaviour_summary", nil)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, &Error{Code: CodeInvalidArgument, Message: "behaviour summary is not a document: " + err.Error()}
+	}
+	_ = e.store.Put(key, raw, e.now())
+	return m, nil
+}
+
+func sectionNames(summary map[string]any) []string {
+	names := make([]string, 0, len(summary))
+	for name, v := range summary {
+		switch v.(type) {
+		case []any, map[string]any:
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ThreatMitreTree fetches a collection's ATT&CK tree, raw. The MCP layer
+// compacts it for tool responses; the CLI's --json gets everything.
+func (e *Engine) ThreatMitreTree(ctx context.Context, id string, opts ThreatOptions) (*MitreTree, error) {
+	if err := e.requireKey(); err != nil {
+		return nil, err
+	}
+	if !collectionIDPattern.MatchString(id) {
+		return nil, &Error{Code: CodeInvalidArgument,
+			Message: fmt.Sprintf("%q is not a collection id (e.g. vulnerability--cve-..., alienvault_...)", id)}
+	}
+	key := cache.Key("mitre", id)
+	return lookupCached(e, key, e.cfg.ThreatTTL, opts.Refresh, func() (*MitreTree, bool, error) {
+		raw, err := e.client.GetData(ctx, "collections/"+id+"/mitre_tree", nil)
+		if err != nil {
+			return nil, false, err
+		}
+		var tree map[string]any
+		if err := json.Unmarshal(raw, &tree); err != nil {
+			return nil, false, &Error{Code: CodeInvalidArgument, Message: "mitre tree is not a document: " + err.Error()}
+		}
+		return &MitreTree{ID: id, Tree: tree}, true, nil
+	})
+}
+
+// HuntingRulesets lists the account's own LiveHunt rulesets. Account state
+// is live configuration — someone toggles a rule and asks whether it took —
+// so it is deliberately never cached.
+func (e *Engine) HuntingRulesets(ctx context.Context, limit int) (*HuntingRulesetList, error) {
+	if err := e.requireKey(); err != nil {
+		return nil, err
+	}
+	limit, err := e.resolveLimit(limit)
+	if err != nil {
+		return nil, err
+	}
+	list, err := e.client.ListObjects(ctx, "intelligence/hunting_rulesets", url.Values{
+		"limit":      {strconv.Itoa(limit)},
+		"attributes": {"name,enabled,number_of_rules"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	res := &HuntingRulesetList{Retrieved: len(list.Objects), More: list.Cursor != ""}
+	for _, o := range list.Objects {
+		enabled, _ := o.Attributes["enabled"].(bool)
+		n, _ := o.Attributes["number_of_rules"].(float64)
+		res.Items = append(res.Items, HuntingRulesetSummary{
+			ID:            o.ID,
+			Name:          stringAttr(o.Attributes, "name"),
+			Enabled:       enabled,
+			NumberOfRules: int(n),
+		})
+	}
+	return res, nil
+}
+
+// HuntingRuleset fetches one LiveHunt ruleset, rules text included. Never
+// cached, for the same reason as the list.
+func (e *Engine) HuntingRuleset(ctx context.Context, id string) (*HuntingRuleset, error) {
+	if err := e.requireKey(); err != nil {
+		return nil, err
+	}
+	if !collectionIDPattern.MatchString(id) {
+		return nil, &Error{Code: CodeInvalidArgument,
+			Message: fmt.Sprintf("%q is not a ruleset id (the numeric id from the ruleset list)", id)}
+	}
+	obj, err := e.client.GetObject(ctx, "intelligence/hunting_rulesets/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+	enabled, _ := obj.Attributes["enabled"].(bool)
+	n, _ := obj.Attributes["number_of_rules"].(float64)
+	return &HuntingRuleset{
+		ID:              obj.ID,
+		Name:            stringAttr(obj.Attributes, "name"),
+		Enabled:         enabled,
+		MatchObjectType: stringAttr(obj.Attributes, "match_object_type"),
+		NumberOfRules:   int(n),
+		RuleNames:       stringsAttr(obj.Attributes, "rule_names"),
+		Rules:           stringAttr(obj.Attributes, "rules"),
+		CreationDate:    dateAttr(obj.Attributes, "creation_date"),
+		Modified:        dateAttr(obj.Attributes, "modification_date"),
+	}, nil
 }
 
 // fetchRelated picks the request shape by what the relationship returns:

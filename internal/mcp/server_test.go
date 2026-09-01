@@ -15,11 +15,56 @@ import (
 // fakeEngine answers with canned results and records the options it was
 // called with, so the tool layer's argument plumbing is what gets tested.
 type fakeEngine struct {
-	searchOpts engine.SearchOptions
-	iocOpts    engine.IOCOptions
-	relOpts    engine.RelatedOptions
-	threat     *engine.Threat
-	err        error
+	searchOpts    engine.SearchOptions
+	iocSearchOpts engine.IOCSearchOptions
+	iocOpts       engine.IOCOptions
+	relOpts       engine.RelatedOptions
+	behaviourOpts engine.BehaviourOptions
+	threat        *engine.Threat
+	mitre         *engine.MitreTree
+	err           error
+}
+
+func (f *fakeEngine) SearchIOCs(_ context.Context, query string, opts engine.IOCSearchOptions) (*engine.IOCSearch, error) {
+	f.iocSearchOpts = opts
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &engine.IOCSearch{Query: query, Retrieved: 1,
+		Items: []engine.IOCItem{{ID: "abc", Type: "file"}}}, nil
+}
+
+func (f *fakeEngine) ThreatMitreTree(_ context.Context, id string, _ engine.ThreatOptions) (*engine.MitreTree, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.mitre != nil {
+		return f.mitre, nil
+	}
+	return &engine.MitreTree{ID: id, Tree: map[string]any{}}, nil
+}
+
+func (f *fakeEngine) FileBehaviour(_ context.Context, value string, opts engine.BehaviourOptions) (*engine.Behaviour, error) {
+	f.behaviourOpts = opts
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &engine.Behaviour{Value: value}, nil
+}
+
+func (f *fakeEngine) HuntingRulesets(_ context.Context, limit int) (*engine.HuntingRulesetList, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &engine.HuntingRulesetList{Retrieved: 1,
+		Items: []engine.HuntingRulesetSummary{{ID: "25811887535", Name: "example", Enabled: false}}}, nil
+}
+
+func (f *fakeEngine) HuntingRuleset(_ context.Context, id string) (*engine.HuntingRuleset, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &engine.HuntingRuleset{ID: id, Name: "example", Rules: "rule x { condition: true }"}, nil
 }
 
 func (f *fakeEngine) SearchThreats(_ context.Context, query string, opts engine.SearchOptions) (*engine.ThreatSearch, error) {
@@ -177,8 +222,10 @@ func TestToolsListNamesEveryTool(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		ToolSearchThreats, ToolGetThreat, ToolGetThreatRelated,
-		ToolLookupIOC, ToolGetIOCRelated, ToolCacheStatus, ToolGetUsage,
+		ToolSearchThreats, ToolSearchIOCs, ToolGetThreat, ToolGetThreatRelated,
+		ToolGetThreatMitreTree, ToolLookupIOC, ToolGetIOCRelated,
+		ToolGetFileBehaviour, ToolListHuntingRules, ToolGetHuntingRuleset,
+		ToolCacheStatus, ToolGetUsage,
 	} {
 		if !names[want] {
 			t.Errorf("tools/list is missing %s (got %v)", want, names)
@@ -312,6 +359,62 @@ func TestEngineErrorCodesSurviveTheToolLayer(t *testing.T) {
 		if payload["code"] != tc.code {
 			t.Errorf("code = %q, want %q", payload["code"], tc.code)
 		}
+	}
+}
+
+func TestNewToolsPlumbArguments(t *testing.T) {
+	eng := &fakeEngine{}
+	srv := testServerWith(t, eng)
+
+	serve(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_iocs",`+
+		`"arguments":{"query":"entity:file wannacry","order_by":"last_submission_date-","limit":7}}}`)
+	if eng.iocSearchOpts.OrderBy != "last_submission_date-" || eng.iocSearchOpts.Limit != 7 {
+		t.Errorf("search_iocs options not plumbed: %+v", eng.iocSearchOpts)
+	}
+
+	serve(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_file_behaviour",`+
+		`"arguments":{"value":"da39a3ee5e6b4b0d3255bfef95601890afd80709","section":"dns_lookups","offset":5,"limit":3}}}`)
+	if eng.behaviourOpts.Section != "dns_lookups" || eng.behaviourOpts.Offset != 5 || eng.behaviourOpts.Limit != 3 {
+		t.Errorf("get_file_behaviour options not plumbed: %+v", eng.behaviourOpts)
+	}
+}
+
+// The raw tree measured 258 KB; the tool response is the compact identity
+// view unless full:true escapes it.
+func TestMitreTreeIsCompactByDefault(t *testing.T) {
+	eng := &fakeEngine{mitre: &engine.MitreTree{ID: "x", Tree: map[string]any{
+		"tactics": []any{map[string]any{
+			"id": "TA0003", "name": "Persistence",
+			"description": strings.Repeat("long prose ", 500),
+			"techniques": []any{map[string]any{
+				"id": "T1070", "name": "Indicator Removal", "count": float64(2),
+				"description": strings.Repeat("more prose ", 500),
+				"signatures":  []any{map[string]any{"description": "sig"}},
+			}},
+		}},
+	}}}
+	srv := testServerWith(t, eng)
+
+	resps := serve(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_threat_mitre_tree","arguments":{"id":"x"}}}`)
+	text, isErr := toolResultText(t, resps[0])
+	if isErr {
+		t.Fatalf("tool errored: %s", text)
+	}
+	if strings.Contains(text, "long prose") || strings.Contains(text, `"signatures":`) {
+		t.Error("compact view leaked descriptions/signatures")
+	}
+	for _, want := range []string{"TA0003", "T1070", "Indicator Removal", "full:true"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("compact view is missing %q", want)
+		}
+	}
+
+	resps = serve(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_threat_mitre_tree","arguments":{"id":"x","full":true}}}`)
+	text, _ = toolResultText(t, resps[0])
+	if !strings.Contains(text, "long prose") {
+		t.Error("full:true did not return the raw tree")
 	}
 }
 

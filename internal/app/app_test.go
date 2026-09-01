@@ -76,7 +76,7 @@ func TestUnknownCommandIsUsageError(t *testing.T) {
 // the scaffold's help honest as commands are implemented: adding a line to the
 // usage text without a case in the switch fails here.
 func TestUsageCommandsAreDispatched(t *testing.T) {
-	for _, cmd := range []string{"search", "threat", "ioc", "cache", "mcp", "version", "help"} {
+	for _, cmd := range []string{"search", "search-iocs", "threat", "ioc", "behaviour", "hunting", "cache", "mcp", "version", "help"} {
 		var stdout, stderr bytes.Buffer
 		run([]string{cmd}, "dev", nil, &stdout, &stderr)
 		if strings.Contains(stderr.String(), "unknown command") {
@@ -95,9 +95,11 @@ func TestQueryWithoutAKeyIsAConfigError(t *testing.T) {
 	t.Setenv("VT_APIKEY", "")
 
 	for _, args := range [][]string{
-		{"search", "apt"},
-		{"threat", "threat-actor--x"},
+		{"search", "log4j"},
+		{"search-iocs", "wannacry"},
+		{"threat", "vulnerability--cve-2021-44228"},
 		{"ioc", "example.com"},
+		{"behaviour", "da39a3ee5e6b4b0d3255bfef95601890afd80709"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if code := run(args, "dev", nil, &stdout, &stderr); code != exitError {

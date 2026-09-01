@@ -75,6 +75,39 @@ func TestListObjectsParsesPageAndCursor(t *testing.T) {
 	}
 }
 
+func TestListReadsIntelligenceTotalHits(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"a","type":"file"}],"meta":{"cursor":"x","total_hits":1234.0}}`))
+	})
+	list, err := c.ListObjects(context.Background(), "intelligence/search", nil)
+	if err != nil {
+		t.Fatalf("ListObjects: %v", err)
+	}
+	if list.Count != 1234 {
+		t.Errorf("Count = %d, want 1234 (from total_hits)", list.Count)
+	}
+}
+
+func TestGetDataReturnsRawDocument(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"tactics":[{"id":"TA0003"}]}}`))
+	})
+	raw, err := c.GetData(context.Background(), "collections/x/mitre_tree", nil)
+	if err != nil {
+		t.Fatalf("GetData: %v", err)
+	}
+	if !strings.Contains(string(raw), "TA0003") {
+		t.Errorf("raw = %s", raw)
+	}
+	// And a missing data member is upstream drift, not an empty answer.
+	c2 := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"message":"Forbidden"}`))
+	})
+	if _, err := c2.GetData(context.Background(), "x", nil); Code(err) != CodeDecode {
+		t.Errorf("missing data member: code = %q, want %q", Code(err), CodeDecode)
+	}
+}
+
 func TestListWithoutCountReportsMinusOne(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[],"meta":{}}`))
