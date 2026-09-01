@@ -8,6 +8,8 @@ import (
 
 	"github.com/nlink-jp/gti-lookup/internal/cache"
 	"github.com/nlink-jp/gti-lookup/internal/config"
+	"github.com/nlink-jp/gti-lookup/internal/engine"
+	"github.com/nlink-jp/gti-lookup/internal/gti"
 	"github.com/nlink-jp/gti-lookup/internal/mcp"
 )
 
@@ -29,11 +31,14 @@ func runMCP(args []string, version string, stdin io.Reader, stdout, stderr io.Wr
 		fmt.Fprintf(stderr, "gti-lookup: %v\n", err)
 		return exitError
 	}
+	store := &cache.Store{Dir: cfg.CacheDir}
+	client := gti.New(cfg.BaseURL, cfg.APIKey, cfg.Timeout, "gti-lookup/"+version)
 
 	srv := &mcp.Server{
 		Cfg:     cfg,
-		Cache:   &cache.Store{Dir: cfg.CacheDir},
+		Cache:   store,
 		Version: version,
+		Eng:     engine.New(cfg, store, client),
 	}
 
 	if err := srv.Serve(context.Background(), stdin, stdout); err != nil {

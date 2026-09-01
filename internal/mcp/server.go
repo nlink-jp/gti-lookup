@@ -20,6 +20,7 @@ type Server struct {
 	Cfg     *config.Config
 	Cache   *cache.Store
 	Version string
+	Eng     Engine
 }
 
 // Serve reads newline-delimited JSON-RPC messages until stdin closes.
