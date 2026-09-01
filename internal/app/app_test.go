@@ -85,16 +85,26 @@ func TestUsageCommandsAreDispatched(t *testing.T) {
 	}
 }
 
-// The unimplemented commands must say so and fail, not silently succeed — a
-// scaffold that exits 0 on `ioc <hash>` would read as "nothing found".
-func TestUnimplementedCommandsRefuseHonestly(t *testing.T) {
-	for _, cmd := range []string{"search", "threat", "ioc"} {
+// A query without a configured key is a configuration error with a pointed
+// message, not an upstream failure and not a stack of retries.
+func TestQueryWithoutAKeyIsAConfigError(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_CACHE_HOME", dir)
+	t.Setenv("GTI_LOOKUP_API_KEY", "")
+	t.Setenv("VT_APIKEY", "")
+
+	for _, args := range [][]string{
+		{"search", "apt"},
+		{"threat", "threat-actor--x"},
+		{"ioc", "example.com"},
+	} {
 		var stdout, stderr bytes.Buffer
-		if code := run([]string{cmd, "x"}, "dev", nil, &stdout, &stderr); code != exitError {
-			t.Errorf("%s: exit code = %d, want %d", cmd, code, exitError)
+		if code := run(args, "dev", nil, &stdout, &stderr); code != exitError {
+			t.Errorf("%v: exit code = %d, want %d", args, code, exitError)
 		}
-		if !strings.Contains(stderr.String(), "not implemented") {
-			t.Errorf("%s: stderr does not say the command is unimplemented: %s", cmd, stderr.String())
+		if !strings.Contains(stderr.String(), "API key") {
+			t.Errorf("%v: stderr does not point at the missing key: %s", args, stderr.String())
 		}
 	}
 }

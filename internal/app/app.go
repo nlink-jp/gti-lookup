@@ -12,11 +12,11 @@ import (
 
 // Exit codes. An indicator with no associations is a successful answer — most
 // indicators an analyst types are not in any curated collection — so it is
-// distinct from an operational failure. Exit 1 (an upstream failure prevented
-// some queries) joins this block with the first command that can return it.
+// distinct from an operational failure.
 const (
-	exitOK    = 0 // every query was answered (empty answers included)
-	exitError = 2 // usage / validation / configuration error
+	exitOK      = 0 // every query was answered (empty answers included)
+	exitPartial = 1 // an upstream failure prevented or degraded some queries
+	exitError   = 2 // usage / validation / configuration error
 )
 
 // Run dispatches a subcommand and returns a process exit code.
@@ -34,11 +34,11 @@ func run(args []string, version string, stdin io.Reader, stdout, stderr io.Write
 	cmd, rest := args[0], args[1:]
 	switch cmd {
 	case "search":
-		return notImplemented(cmd, stderr)
+		return runSearch(rest, version, stdout, stderr)
 	case "threat":
-		return notImplemented(cmd, stderr)
+		return runThreat(rest, version, stdout, stderr)
 	case "ioc":
-		return notImplemented(cmd, stderr)
+		return runIOC(rest, version, stdout, stderr)
 	case "cache":
 		return runCache(rest, stdout, stderr)
 	case "mcp":
@@ -54,13 +54,6 @@ func run(args []string, version string, stdin io.Reader, stdout, stderr io.Write
 		usage(stderr)
 		return exitError
 	}
-}
-
-// notImplemented is the scaffold's stand-in for the lookup commands. They are
-// dispatched (so the usage text stays honest) but refuse to pretend.
-func notImplemented(cmd string, stderr io.Writer) int {
-	fmt.Fprintf(stderr, "gti-lookup: %s is not implemented yet — the design is fixed in docs/ja/gti-lookup-rfp.ja.md\n", cmd)
-	return exitError
 }
 
 // printVersion is the single source of the version banner. `--version` and the
@@ -82,18 +75,38 @@ Usage:
 Commands:
   search <query>           Search threats (actors, campaigns, malware families, ...)
   threat <collection-id>   Curated report for one collection; --related pivots
-  ioc <value>              Actor context for a hash, domain, IP or URL
+  ioc <value ...>          Actor context for hashes, domains, IPs or URLs
   cache status             Show the result-cache state
   cache clear              Clear the result cache
   mcp                      Run as a local MCP server (stdio)
   version                  Print the version
 
-search, threat and ioc are not implemented yet; their design is fixed in
-docs/ja/gti-lookup-rfp.ja.md.
+Shared flags:
+  -j, --json               JSON output (JSONL for multiple ioc targets)
+  --refresh                Bypass the result cache and re-query
+  --limit <n>              Results to list (default 10, max 40)
+  --timeout <dur>          Network timeout (e.g. 10s; default 30s)
+  -c, --config <path>      Config file (default ~/.config/gti-lookup/config.toml)
+
+search flags:
+  --type <t>               threat-actor, malware-family, campaign, report,
+                           software-toolkit, vulnerability, collection
+  --order <key>            relevance-, creation_date+, ... (default relevance-)
+
+threat / ioc flags:
+  --related <name>         Expand one relationship (curated list; see help output
+                           of the flag or get_usage)
+  --related-other <name>   Send an uncurated relationship name upstream as-is
+
+ioc flags:
+  --full                   Full report instead of the trimmed actor context
+
+The indicator type is detected from its shape: MD5/SHA1/SHA256 hash, IPv4,
+IPv6, URL (scheme://...), or domain.
 
 Exit codes:
   0  every query was answered (an empty answer is a valid answer)
-  1  an upstream failure prevented some queries
+  1  an upstream failure prevented or degraded some queries
   2  error (invalid input, bad configuration, ...)
 
 A valid Google Threat Intelligence licence is required: the API key is
@@ -101,5 +114,11 @@ mandatory, and every query is recorded against the licence holder's account.
 Only Google's index is read, so no packet reaches the target under
 investigation. The tool is read-only by design — no collection writes and no
 sample uploads, permanently.
+
+The default ioc answer is deliberately trimmed to GTI's assessment and the
+associated threats: per-engine verdicts, passive DNS, reputation feeds and
+URL behaviour are owned by malware-lookup, rdns-lookup, abuse-lookup and
+urlscan-lookup. --full opts into the whole report when GTI's view is wanted
+as a second opinion.
 `)
 }
