@@ -113,7 +113,9 @@ func TestSearchThreatsBuildsFilterAndShapesResult(t *testing.T) {
 	if fake.lists[0].path != "collections" {
 		t.Errorf("path = %s", fake.lists[0].path)
 	}
-	if got := q.Get("filter"); got != "collection_type:threat-actor example" {
+	// The documented vocabulary is hyphenated, but the live filter parser
+	// accepts only the underscore tokens (measured 2026-09-01).
+	if got := q.Get("filter"); got != "collection_type:threat_actor example" {
 		t.Errorf("filter = %q", got)
 	}
 	if q.Get("order") != "relevance-" || q.Get("limit") != "5" {

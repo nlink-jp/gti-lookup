@@ -179,7 +179,7 @@ func (e *Engine) SearchThreats(ctx context.Context, query string, opts SearchOpt
 
 	filter := query
 	if opts.CollectionType != "" {
-		filter = "collection_type:" + opts.CollectionType
+		filter = "collection_type:" + filterTypeToken[opts.CollectionType]
 		if query != "" {
 			filter += " " + query
 		}

@@ -23,6 +23,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `INCONCLUSIVE` (exit 1) and never cached.
   - MCP tool responses budget the `description` field (capped with
     accounting, escapable via `description_max`).
+- Live verification against the real GTI API (2026-09-01, gti-standard
+  key): search, reports, both pivot shapes, hash/URL lookups, caching and
+  the MCP face all confirmed. The `collection_type` filter is sent in the
+  underscore vocabulary the live parser accepts (the documented hyphenated
+  values are rejected upstream); text output renders `*_date` attributes as
+  dates instead of scientific notation.
 - Project scaffold: CLI dispatch with the byte-identical `version` /
   `--version` contract, sectioned-TOML configuration with `GTI_LOOKUP_*` /
   `VT_APIKEY` resolution and two cache TTLs (threat 24 h / IOC 1 h),

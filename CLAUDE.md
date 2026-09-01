@@ -83,11 +83,12 @@ clocks injected) so tests are deterministic and offline.
 
 Core implemented (RFP dev-plan Phase 1): `search` / `threat` / `ioc` commands,
 the five MCP lookup tools, caching, offline test suite green (`-race`, all
-layers). **Not yet done**: live verification against the real GTI API
-(`make e2e` — the e2e tests themselves are unwritten), the RFP's Phase-2
-features (`search_iocs`, `get_threat_rules`, `get_hunting_ruleset`), and
-release. Endpoint shapes that still need live confirmation are flagged in
-AGENTS.md Gotchas; record measurements there as they land.
+layers), and **live-verified 2026-09-01 with a gti-standard key** — see
+AGENTS.md Gotchas for the dated measurements, including the
+`collection_type` filter vocabulary and the Enterprise tier gate on the
+curated actor catalogue. **Not yet done**: codified e2e tests under `e2e/`,
+re-verification with an Enterprise key, the RFP's Phase-2 features
+(`search_iocs`, `get_threat_rules`, `get_hunting_ruleset`), and release.
 
 ## Communication Language
 

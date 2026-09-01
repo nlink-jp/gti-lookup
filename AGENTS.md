@@ -40,14 +40,18 @@ scripts/                codesign/notarize + brew generation (org templates)
 
 ## Current state
 
-Core implemented and offline-green (`make test`, `-race`, httptest +
-fake-client + dummy JSON-RPC harness). CLI: `search` / `threat` / `ioc`
-(multi-target, JSONL) / `cache` / `mcp`. MCP: `search_threats`, `get_threat`,
+Core implemented, offline-green (`make test`, `-race`, httptest +
+fake-client + dummy JSON-RPC harness) and **live-verified 2026-09-01**
+against the real API with a gti-standard key (search, threat report,
+descriptor and full-object pivots, hash/URL lookups, associations paging,
+cache reuse, the MCP face). CLI: `search` / `threat` / `ioc` (multi-target,
+JSONL) / `cache` / `mcp`. MCP: `search_threats`, `get_threat`,
 `get_threat_related`, `lookup_ioc`, `get_ioc_related`, `cache_status`,
 `get_usage`. Exit codes: 0 = answered, 1 = upstream failure/degraded
-(`INCONCLUSIVE`), 2 = usage/config error. Pending: e2e live tests, RFP
-Phase-2 tools (`search_iocs` / `get_threat_rules` / `get_hunting_ruleset`),
-release.
+(`INCONCLUSIVE`), 2 = usage/config error. Pending: codified e2e tests under
+`e2e/` (the manual live pass above is not yet automated), re-verification
+with an Enterprise-tier key, RFP Phase-2 tools (`search_iocs` /
+`get_threat_rules` / `get_hunting_ruleset`), release.
 
 ## Gotchas
 
@@ -58,14 +62,35 @@ release.
   uses it); `GTI_LOOKUP_API_KEY` wins when both are set.
 - **URL identifiers are unpadded base64url** (`gti.URLID`), matching vt-py.
   Google's own MCP server uses the *standard* alphabet, which corrupts the
-  path when the encoding yields `+` or `/`. Verify against the live API in
-  e2e (as of 2026-09-01, unverified).
-- **Relationship descriptors use the plural path** `/{obj}/{id}/relationships/{rel}`
-  (per gtidocs); full related objects use `/{obj}/{id}/{rel}` with an
-  `attributes=` narrowing. Google's MCP server requests the singular
-  `/relationship/` — unverified which the API canonically accepts; e2e must
-  confirm, and whether `attributes=` narrowing works on relationship
-  endpoints (as of 2026-09-01, both unverified).
+  path when the encoding yields `+` or `/`. **Verified live 2026-09-01**:
+  `urls/{RawURLEncoding}` answers correctly.
+- **Relationship descriptors use the plural path** `/{obj}/{id}/relationships/{rel}`;
+  full related objects use `/{obj}/{id}/{rel}` with `attributes=` narrowing.
+  **Both verified live 2026-09-01** (descriptors return ids + `meta.count`;
+  `attributes=name,collection_type` narrowing works on relationship
+  endpoints). Google's MCP server requests the singular `/relationship/` —
+  not what we use.
+- **The `collection_type` filter rejects the documented vocabulary.**
+  Measured 2026-09-01 (gti-standard key): the hyphenated values from gtidocs
+  (`threat-actor`, `malware-family`, `campaign`, `report`, `collection`) are
+  rejected with `Invalid value for collection_type`, parentheses or not; the
+  parser accepts underscore tokens (`threat_actor`, `malware_family`,
+  `software_toolkit`, `vulnerability`, `campaigns`, `threat_report`,
+  `intelligence_report`, `ioc_collection`, `sigma_ruleset`, `yara_ruleset`).
+  `engine.filterTypeToken` maps the documented vocabulary to those tokens.
+  The `campaign→campaigns`, `report→threat_report`, `collection→ioc_collection`
+  mappings are accepted upstream but **semantically unverified** — on this
+  tier the gated content answers empty, so re-verify with an Enterprise key.
+- **Licence tier gates the catalogue.** This machine's key carries
+  `gti-standard`: curated threat-actor / campaign / report content is
+  invisible (type-filtered and free-text searches return them as empty, not
+  403), and `gti_assessment` is absent from IOC objects (WannaCry included).
+  What works at this tier: `vulnerability` collections (searchable, rich),
+  community collections (alienvault_* etc., reachable via associations),
+  every IOC relationship pivot, descriptors, counts. Per gtidocs, threat
+  actors / campaigns / country & industry profiles need **GTI Enterprise or
+  Enterprise+**. Expect richer answers — and re-run verification — under
+  such a key.
 - Two cache TTLs (`ThreatTTL` 24 h / `IOCTTL` 1 h defaults) share one store;
   the caller picks which TTL applies at `Get` time. Degraded results
   (`IOC.Incomplete`) are never `Put`.

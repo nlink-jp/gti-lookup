@@ -18,6 +18,13 @@ Results are cached locally (collections ~24 h, IOC answers ~1 h by default);
 pass `refresh: true` to bypass. An empty answer is a valid answer; a result
 with `incomplete: true` is NOT — treat it as unanswered.
 
+**The licence tier decides what answers.** The curated threat-actor /
+campaign / report catalogue is visible only to GTI Enterprise / Enterprise+
+licences. On GTI Standard, `search_threats` with those types answers empty
+(not an error) and `gti_assessment` is absent from lookup_ioc — actor
+context then comes from community collections in `associations`. Do not read
+a tier-empty search as "this actor does not exist".
+
 ## Tools
 
 ### search_threats

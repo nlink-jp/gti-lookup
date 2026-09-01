@@ -9,7 +9,9 @@ import (
 	"github.com/nlink-jp/gti-lookup/internal/indicator"
 )
 
-// CollectionTypes are the curated threat kinds the catalogue models.
+// CollectionTypes are the curated threat kinds the catalogue models, in the
+// documented (hyphenated) vocabulary — the one that appears in response
+// attributes and collection ids.
 var CollectionTypes = []string{
 	"threat-actor", "malware-family", "campaign", "report",
 	"software-toolkit", "vulnerability", "collection",
@@ -17,6 +19,22 @@ var CollectionTypes = []string{
 
 // CollectionTypeSet is CollectionTypes as a membership set.
 var CollectionTypeSet = toSet(CollectionTypes)
+
+// filterTypeToken translates the documented vocabulary into what the live
+// filter parser actually accepts (measured 2026-09-01): the hyphenated forms
+// from gtidocs are rejected as "Invalid value for collection_type", the
+// underscore tokens are accepted. The campaign/report/collection tokens are
+// accepted too but could not be verified semantically on a gti-standard key
+// (Enterprise-gated content answers empty there) — see AGENTS.md Gotchas.
+var filterTypeToken = map[string]string{
+	"threat-actor":     "threat_actor",
+	"malware-family":   "malware_family",
+	"campaign":         "campaigns",
+	"report":           "threat_report",
+	"software-toolkit": "software_toolkit",
+	"vulnerability":    "vulnerability",
+	"collection":       "ioc_collection",
+}
 
 var collectionTypesJoined = strings.Join(CollectionTypes, ", ")
 

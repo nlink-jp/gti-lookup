@@ -116,7 +116,7 @@ func renderThreat(stdout io.Writer, res *engine.Threat) {
 		case string:
 			fmt.Fprintf(stdout, "%s: %s\n", k, clip(v, 200, "…"))
 		case float64:
-			fmt.Fprintf(stdout, "%s: %g\n", k, v)
+			fmt.Fprintf(stdout, "%s: %s\n", k, renderNumber(k, v))
 		case bool:
 			fmt.Fprintf(stdout, "%s: %t\n", k, v)
 		case []any:

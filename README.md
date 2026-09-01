@@ -30,6 +30,13 @@ nothing without a **paid GTI licence** and its API key. The free VirusTotal
 tier is not sufficient, and there is no anonymous or degraded free mode.
 Every query is recorded against the licence holder's account.
 
+Within GTI, the **licence tier decides what answers**: the curated threat
+actor / campaign / report catalogue is visible only to GTI **Enterprise /
+Enterprise+** licences. On GTI Standard (measured 2026-09-01), type-filtered
+actor searches answer empty and `gti_assessment` is absent; vulnerability
+collections, community collections (reached via an IOC's associations) and
+every relationship pivot still work.
+
 ## Installation
 
 Pre-release: build from source.

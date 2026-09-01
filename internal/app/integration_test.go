@@ -50,7 +50,7 @@ func setupIntegration(t *testing.T) (*http.ServeMux, *atomic.Int64) {
 func TestSearchEndToEnd(t *testing.T) {
 	mux, _ := setupIntegration(t)
 	mux.HandleFunc("/collections", func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("filter"); got != "collection_type:threat-actor lazarus" {
+		if got := r.URL.Query().Get("filter"); got != "collection_type:threat_actor lazarus" {
 			t.Errorf("filter = %q", got)
 		}
 		_, _ = w.Write([]byte(`{"data":[{"id":"threat-actor--x","type":"collection","attributes":` +

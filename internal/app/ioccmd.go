@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nlink-jp/gti-lookup/internal/engine"
 )
@@ -142,7 +144,7 @@ func renderScalars(stdout io.Writer, indent string, m map[string]any) {
 		case string:
 			fmt.Fprintf(stdout, "%s%s: %s\n", indent, k, clip(v, 200, "…"))
 		case float64:
-			fmt.Fprintf(stdout, "%s%s: %g\n", indent, k, v)
+			fmt.Fprintf(stdout, "%s%s: %s\n", indent, k, renderNumber(k, v))
 		case bool:
 			fmt.Fprintf(stdout, "%s%s: %t\n", indent, k, v)
 		case map[string]any:
@@ -155,6 +157,18 @@ func renderScalars(stdout io.Writer, indent string, m map[string]any) {
 			fmt.Fprintf(stdout, "%s%s: [%d items] (--json to expand)\n", indent, k, len(v))
 		}
 	}
+}
+
+// renderNumber keeps numeric attributes legible: unix-seconds *_date fields
+// print as dates, whole numbers print without the %g scientific notation.
+func renderNumber(key string, v float64) string {
+	if strings.HasSuffix(key, "_date") && v > 1e9 && v < 1e11 {
+		return time.Unix(int64(v), 0).UTC().Format("2006-01-02")
+	}
+	if v == float64(int64(v)) {
+		return strconv.FormatInt(int64(v), 10)
+	}
+	return strconv.FormatFloat(v, 'g', -1, 64)
 }
 
 // singleScalar unwraps GTI's {"value": X} wrapper objects so a verdict prints
