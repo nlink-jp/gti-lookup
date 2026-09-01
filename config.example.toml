@@ -1,0 +1,50 @@
+# gti-lookup configuration — copy to ~/.config/gti-lookup/config.toml
+#
+# Every setting except the API key is optional; the values shown are the
+# built-in defaults. Precedence is: flag > environment variable > this file >
+# built-in default.
+#
+# This file holds a credential. Keep it out of version control (the repository
+# .gitignore already excludes config.toml) and readable only by you — the key
+# carries your GTI licence's authority, and every query made with it is
+# recorded against the licence holder's account.
+
+[api]
+# GTI API key (REQUIRED for every query). Issued with a Google Threat
+# Intelligence licence; the free VirusTotal tier is not sufficient.
+# The GTI_LOOKUP_API_KEY environment variable overrides this value, and
+# VT_APIKEY is also accepted — that is the variable Google's own GTI tooling
+# conventionally uses, so an environment already set up for it works here.
+#key = "YOUR-GTI-API-KEY-HERE"
+
+# API root. Override only to point at a mirror or a test server.
+# The GTI_LOOKUP_BASE_URL environment variable overrides this value.
+# base_url = "https://www.virustotal.com/api/v3"
+
+[query]
+# Results listed per search or relationship expansion before the rest are
+# summarised.
+# The GTI_LOOKUP_DEFAULT_LIMIT environment variable overrides this value.
+# default_limit = 10
+
+[cache]
+# How long a cached collection (threat actor / campaign / malware family /
+# report) answer stays fresh. Curated collections change slowly, so a day
+# keeps repeated pivots down to a single request.
+# The GTI_LOOKUP_THREAT_TTL_HOURS environment variable overrides this value.
+# threat_ttl_hours = 24
+
+# How long a cached IOC (file / domain / IP / URL) answer stays fresh. IOC
+# assessments move with new analyses, so this is deliberately short.
+# The GTI_LOOKUP_IOC_TTL_HOURS environment variable overrides this value.
+# ioc_ttl_hours = 1
+
+# Cache directory. Defaults to $XDG_CACHE_HOME/gti-lookup, else
+# ~/.cache/gti-lookup.
+# The GTI_LOOKUP_CACHE_DIR environment variable overrides this value.
+# dir = "~/.cache/gti-lookup"
+
+[network]
+# Timeout per HTTPS exchange.
+# The GTI_LOOKUP_TIMEOUT_SECONDS environment variable overrides this value.
+# timeout_seconds = 30
