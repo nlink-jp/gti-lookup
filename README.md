@@ -22,9 +22,13 @@ no sample uploads, permanently.
 
 ## Requirements
 
-- A **Google Threat Intelligence licence** and its API key. The free
-  VirusTotal tier is not sufficient, and every query is recorded against the
-  licence holder's account.
+**A commercial Google Threat Intelligence account is required.** This tool is
+the exception in the lookup series: its siblings answer with no account at
+all (rdns-lookup, doh-lookup, tor-exit-lookup, whois-lookup, ...) or with a
+free API key (abuse-lookup, otx-lookup, malware-lookup), but gti-lookup does
+nothing without a **paid GTI licence** and its API key. The free VirusTotal
+tier is not sufficient, and there is no anonymous or degraded free mode.
+Every query is recorded against the licence holder's account.
 
 ## Installation
 

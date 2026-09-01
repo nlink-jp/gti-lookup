@@ -21,9 +21,13 @@ Mandiant/Google のキュレート済みカタログを読みます: インジ�
 
 ## 必要なもの
 
-- **Google Threat Intelligence ライセンス**とその API キー。無償の
-  VirusTotal ティアでは不十分です。またすべてのクエリはライセンス保有者の
-  アカウントに記録されます。
+**商用の Google Threat Intelligence アカウントが必須です。** 本ツールは
+lookup シリーズの中で例外です: 姉妹ツールはアカウント不要
+（rdns-lookup / doh-lookup / tor-exit-lookup / whois-lookup など）または
+無償 API キーで動作します（abuse-lookup / otx-lookup / malware-lookup）が、
+gti-lookup は**有償の GTI ライセンス**とその API キーなしには何もできません。
+無償の VirusTotal ティアでは不十分で、匿名モードや無償の縮退モードも
+ありません。また、すべてのクエリはライセンス保有者のアカウントに記録されます。
 
 ## インストール
 
