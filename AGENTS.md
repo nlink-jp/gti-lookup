@@ -23,6 +23,15 @@ make check       # lint + test + build-all
 make package     # release archives + darwin notarization
 ```
 
+`make lint` is `golangci-lint run ./...` with the default linter set.
+`.golangci.yml` excludes exactly one thing from errcheck — `fmt.Fprint*`, which
+in this repository only ever writes to the stdout/stderr that `app.Run` is
+handed — and nothing else. errcheck stays on everywhere else because
+`internal/cache` writes result files: `writeAtomic` is atomic only because the
+`Close` error is checked before the rename. The exclusion matches by function
+name, not by destination, so do not write a file with `fmt.Fprint*`. Do not add
+a second exclusion to get a finding out of the way; fix the code.
+
 ## Structure
 
 ```
@@ -130,4 +139,10 @@ unshippable. Pending: codified e2e tests under `e2e/`, release.
 - Measured Forbidden at Standard (2026-09-01): `/threat_profiles`,
   `/collections/{id}/timeline/events`, `/dtm/docs/search` (despite a `dtm`
   privilege flag). Collection-linked `hunting_rulesets` answer `count: 0`.
+- **golangci-lint shows at most 3 findings with the same text**, so its
+  "N issues" undercounts a repeated finding. Measured 2026-09-20: the default
+  output reported 8 errcheck findings where
+  `golangci-lint run --max-same-issues 0 --max-issues-per-linter 0 ./...`
+  listed 93. Size a finding with the untruncated run before deciding how to
+  handle it.
 - Live measurements that contradict gtidocs.virustotal.com go here, dated.

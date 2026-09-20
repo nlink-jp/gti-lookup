@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `make check` is green again: `make lint` failed on errcheck findings for
+  every `fmt.Fprint*` write to the CLI's own stdout/stderr, plus one
+  staticcheck suggestion. No behaviour change.
+  - `.golangci.yml` excludes only `fmt.Fprint*` from errcheck, so errcheck
+    stays meaningful everywhere else (the cache writes files).
+  - The upstream status-to-code mapping is a tagged switch (staticcheck
+    QF1002).
+
 ## [0.1.0] - 2026-09-01
 
 First release: threat context from Google Threat Intelligence as a CLI and a
