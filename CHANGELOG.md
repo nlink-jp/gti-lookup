@@ -21,6 +21,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - The upstream status-to-code mapping is a tagged switch (staticcheck
     QF1002).
 
+### Documentation
+
+- The README says how to install the released tool (Homebrew tap, release
+  archives); it had described only building from source.
+
 ## [0.1.0] - 2026-09-01
 
 First release: threat context from Google Threat Intelligence as a CLI and a
