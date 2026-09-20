@@ -202,16 +202,16 @@ func sanitizeNetErr(err error) string { return err.Error() }
 // keeping upstream's own code and message as evidence.
 func statusError(status int, body []byte) *Error {
 	code := CodeUpstream
-	switch {
-	case status == http.StatusUnauthorized:
+	switch status {
+	case http.StatusUnauthorized:
 		code = CodeAuth
-	case status == http.StatusForbidden:
+	case http.StatusForbidden:
 		code = CodeForbid
-	case status == http.StatusNotFound:
+	case http.StatusNotFound:
 		code = CodeNotFound
-	case status == http.StatusBadRequest:
+	case http.StatusBadRequest:
 		code = CodeBadReq
-	case status == http.StatusTooManyRequests:
+	case http.StatusTooManyRequests:
 		code = CodeQuota
 	}
 
