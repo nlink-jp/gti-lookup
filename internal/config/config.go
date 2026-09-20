@@ -215,18 +215,28 @@ func parseInt(v string) (int, error) {
 	return n, nil
 }
 
+// The range is stated from the inside. ParseFloat also reads "NaN" and "Inf",
+// and NaN fails every comparison — so a check written as "reject what is below
+// the floor" lets it through, and the Duration it becomes is whatever the
+// platform makes of NaN. The ceiling keeps a number like 1e300 from
+// overflowing a Duration into something negative.
+const (
+	maxSeconds = 3600     // an hour for one network exchange
+	maxHours   = 366 * 24 // a year for a freshness window
+)
+
 func parseSeconds(v string) (time.Duration, error) {
 	s, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-	if err != nil || s <= 0 {
-		return 0, fmt.Errorf("%q is not a positive number", v)
+	if err != nil || !(s > 0 && s <= maxSeconds) {
+		return 0, fmt.Errorf("%q is not a number above 0 and at most %d", v, maxSeconds)
 	}
 	return time.Duration(s * float64(time.Second)), nil
 }
 
 func parseHours(v string) (time.Duration, error) {
 	h, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-	if err != nil || h <= 0 {
-		return 0, fmt.Errorf("%q is not a positive number", v)
+	if err != nil || !(h > 0 && h <= maxHours) {
+		return 0, fmt.Errorf("%q is not a number above 0 and at most %d", v, maxHours)
 	}
 	return time.Duration(h * float64(time.Hour)), nil
 }

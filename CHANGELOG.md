@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A number in the config file was accepted when it was not one. `NaN` passed the
+  range check — it fails every comparison, so "reject what is below the floor"
+  lets it through — and `Inf` or `1e300` overflowed the duration it became.
+  Ranges are now stated from the inside, with a ceiling. Unreleased: the next
+  release carries it.
 - `make check` is green again: `make lint` failed on errcheck findings for
   every `fmt.Fprint*` write to the CLI's own stdout/stderr, plus one
   staticcheck suggestion. No behaviour change.
