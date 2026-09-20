@@ -41,7 +41,7 @@ internal/config/        Sectioned-TOML subset + GTI_LOOKUP_* / VT_APIKEY resolut
 internal/engine/        classify → cache → gti → actor-context shaping; shared by CLI + MCP
 internal/app/           Dispatch + search/threat/ioc/cache/mcp; text and JSON rendering
 internal/mcp/           Zero-dep stdio JSON-RPC 2.0 server; embedded get_usage manual
-e2e/                    Live tests behind the `e2e` build tag (not written yet)
+e2e/                    Live tests behind the `e2e` build tag (`make e2e`; network + licence key)
 ```
 
 Design authority: [docs/ja/gti-lookup-rfp.ja.md](docs/ja/gti-lookup-rfp.ja.md).
@@ -93,13 +93,17 @@ clocks injected) so tests are deterministic and offline.
 
 ## Status
 
+Released and integrated (`git tag` lists the versions).
+
 Standard-tier feature set implemented and **live-verified 2026-09-01** with a
 gti-standard key: `search` / `search-iocs` / `threat` (`--related`,
 `--mitre`) / `ioc` / `behaviour` / `hunting` commands and the twelve MCP
 tools, offline test suite green (`-race`, all layers). See AGENTS.md Gotchas
 for the dated measurements (filter vocabulary, tier gate, behaviour summary
-size). **Not yet done**: codified e2e tests under `e2e/` (the manual live
-pass is not yet automated), and release. Dropped by the standard-tier rule:
+size). The live pass is codified in `e2e/live_test.go` behind the `e2e`
+build tag (`make e2e`; network + licence key; skips itself without a key);
+it drives the engine directly, not the CLI or the MCP layer — AGENTS.md
+lists what it covers. Dropped by the standard-tier rule:
 `get_collection_rules`-style pivots (empty at Standard), collection
 timeline (Forbidden), threat profiles (Forbidden), DTM (Forbidden).
 

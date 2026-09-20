@@ -44,7 +44,7 @@ internal/mcp/           stdio JSON-RPC 2.0 MCP server; usage.md embedded via go:
 internal/gti/           REST client: GetObject/ListObjects/GetData, x-apikey, stable slugs
 internal/engine/        shared core: classify → cache → gti → shape; honesty rules
 internal/indicator/     input classifier (hash/IP/domain/URL, from shape)
-e2e/                    live tests behind the `e2e` tag (not written yet)
+e2e/                    live tests behind the `e2e` tag (`make e2e`; network + licence key)
 scripts/                codesign/notarize + brew generation (org templates)
 ```
 
@@ -64,7 +64,19 @@ answered, 1 = upstream failure/degraded (`INCONCLUSIVE`), 2 = usage/config
 error. **Scope rule**: Standard tier only — Enterprise-gated features
 (curated actors/campaigns/reports, threat profiles, timeline, DTM,
 collection-linked rulesets) are deliberately not shipped; untestable is
-unshippable. Pending: codified e2e tests under `e2e/`, release.
+unshippable. Released and integrated (`git tag` lists the versions).
+
+**Live suite** (`make e2e`; network + a licence key; kept out of
+`go test ./...` by the `e2e` build tag; skips itself when no key is
+configured): `e2e/live_test.go` drives the engine directly against the real
+API with the cache isolated in a tempdir — the CLI and MCP layers are not
+exercised live. Assertions are behavioural, never exact counts. Covered:
+vulnerability search (underscore filter vocabulary), hash lookup with
+associations (attributes narrowing), URL lookup (unpadded base64url id),
+collection report + `domains` descriptor pivot (plural `/relationships/`
+path), MITRE tree, behaviour index + one section page, intelligence search
+(`total_hits` accounting), LiveHunt ruleset list. Not covered live:
+`IOCRelated`, the single-ruleset `HuntingRuleset`, IP and domain lookups.
 
 ## Gotchas
 
