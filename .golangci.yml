@@ -1,0 +1,23 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Writes to the CLI's own stdout/stderr. There is nothing to do with the
+      # error — reporting a failed write to the stream that just failed is
+      # circular, and the process exit code already carries the outcome.
+      #
+      # This is the ONLY errcheck exclusion. Everything else stays on
+      # deliberately: internal/cache writes result files, and its write is
+      # atomic (temp file, Close, rename) only because the Close error is
+      # checked before the rename. An unchecked Close there would rename a
+      # truncated entry into place while Put reports success. errcheck is what
+      # keeps that defect class out.
+      #
+      # The exclusion matches by function name, not by destination. Every
+      # fmt.Fprint* call in this repository writes to the stdout/stderr that
+      # app.Run was handed; do not use fmt.Fprint* to write a file.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
