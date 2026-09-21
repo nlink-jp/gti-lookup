@@ -127,6 +127,14 @@ path), MITRE tree, behaviour index + one section page, intelligence search
   structured `{code, message}` text — never JSON-RPC protocol errors. Tool
   arguments are decoded with `DisallowUnknownFields`, so a mistyped
   parameter surfaces instead of being swallowed.
+- Every tool schema is closed (`additionalProperties: false`, organization
+  ADR-021 §10). It is applied by `closeSchemas` as one pass over the finished
+  tool list, not by each literal, so a tool added later cannot forget it;
+  `TestEveryToolSchemaIsClosed` reads the schemas back off `tools/list`. The
+  closed schema and the strict decoder are two halves of one contract — the
+  schema stops the typo at the client, the decoder stops it here — so do not
+  drop either. Only the top level is closed; a nested free-form object keeps
+  what it declares.
 - The response budget lives at the MCP boundary (`capDescription`), not in
   the engine: the CLI's `--json` stays complete by design.
 - Server-side argument validation must be tested through the dummy JSON-RPC
