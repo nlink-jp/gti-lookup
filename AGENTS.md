@@ -20,6 +20,7 @@ make build       # → dist/gti-lookup (never `go build` directly)
 make test        # go test -race -cover ./... — fully offline
 make e2e         # live GTI tests (network + key required; `e2e` build tag)
 make check       # lint + test + build-all
+make vuln        # govulncheck over the build; `make package` runs it first and stops on a finding
 make package     # release archives + darwin notarization
 ```
 
