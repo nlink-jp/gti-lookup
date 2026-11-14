@@ -9,7 +9,7 @@ design; a GTI licence API key is mandatory. Part of
 `nlink-jp/cybersecurity-series`.
 
 - Module path: `github.com/nlink-jp/gti-lookup`
-- Language: Go 1.25+, standard library only
+- Language: Go 1.27.4+, standard library only
 - Design authority: `docs/ja/gti-lookup-rfp.ja.md` (RFP; English mirror in
   `docs/en/`)
 
